@@ -2,7 +2,9 @@
 
 ## Overview
 
-A live debate and discussion platform with real-time voting, video/audio rooms, and audience participation. Built mobile-first (iOS via Expo), with a Node/Express backend, Supabase for auth/database/realtime, LiveKit for video/audio, and Cloudflare R2 for media storage.
+A live, mobile-first debate platform centered on real-time rooms. Users discover or create reusable debate questions, start rooms attached to those questions, join as speakers or audience, vote in real time, and participate through chat and social/live mechanics. Built with an Expo mobile app, a Node/Express backend, Supabase for auth/database/realtime, LiveKit for audio/video, and Cloudflare R2 for media storage.
+
+For the full product definition and roadmap, see `PRODUCT_ROADMAP.md`.
 
 ---
 
@@ -49,6 +51,25 @@ created_at      timestamptz DEFAULT now()
 updated_at      timestamptz DEFAULT now()
 ```
 
+### questions
+```sql
+id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
+content         text NOT NULL
+submitted_by    uuid REFERENCES users(id) ON DELETE CASCADE
+vote_count      int NOT NULL DEFAULT 0
+status          text NOT NULL DEFAULT 'open'  -- open | in_debate | closed
+created_at      timestamptz DEFAULT now()
+updated_at      timestamptz DEFAULT now()
+```
+
+### question_votes
+```sql
+question_id      uuid REFERENCES questions(id) ON DELETE CASCADE
+user_id          uuid REFERENCES users(id) ON DELETE CASCADE
+created_at       timestamptz DEFAULT now()
+PRIMARY KEY (question_id, user_id)
+```
+
 ### rooms
 ```sql
 id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
@@ -56,6 +77,7 @@ title           text NOT NULL
 topic           text NOT NULL
 status          text NOT NULL DEFAULT 'waiting'  -- waiting | live | ended
 host_id         uuid REFERENCES users(id) ON DELETE CASCADE
+question_id     uuid NOT NULL REFERENCES questions(id) ON DELETE RESTRICT
 livekit_room    text UNIQUE  -- LiveKit room name
 recording_url   text  -- R2 storage URL after ended
 max_speakers    int NOT NULL DEFAULT 4
@@ -100,9 +122,11 @@ created_at      timestamptz DEFAULT now()
 
 All routes prefixed with `/api/v1`.
 
-### Auth
-- `POST /auth/signup` — register (handled mostly by Supabase)
-- `POST /auth/login` — login (handled mostly by Supabase)
+### Questions
+- `GET /questions` — list trending / open questions
+- `GET /questions/:id` — get question details + active room context
+- `POST /questions` — submit a question (auth required)
+- `POST /questions/:id/vote` — toggle an upvote on a question (auth required)
 
 ### Rooms
 - `GET /rooms` — list live/recent rooms
@@ -110,6 +134,7 @@ All routes prefixed with `/api/v1`.
 - `GET /rooms/:id` — get room details
 - `POST /rooms/:id/join` — join as speaker or audience
 - `POST /rooms/:id/leave` — leave room
+- `POST /rooms/:id/start` — start a room (host only)
 - `POST /rooms/:id/end` — end room (host only)
 
 ### Voting
@@ -126,6 +151,7 @@ All routes prefixed with `/api/v1`.
 - **Voting dial:** Supabase Realtime channel on the `votes` table — clients subscribe and recompute the dial position on every insert/update
 - **Audience chat:** Supabase Realtime channel on the `messages` table
 - **Room status changes:** Supabase Realtime channel on the `rooms` table
+- **Question discovery:** Supabase Realtime on `questions` / `question_votes` enables live question ranking and room counts
 - **Video/Audio:** LiveKit handles all WebRTC — backend only issues tokens
 
 ---
@@ -232,12 +258,14 @@ EXPO_PUBLIC_LIVEKIT_URL=
 
 ---
 
-## MVP Scope
+## Product Direction Notes
 
-The following is in scope for the initial build:
-
-- [ ] Expo app with Expo Router navigation
-- [ ] Supabase auth (magic link)
+- Rooms are the primary product surface.
+- Every room must attach to a reusable question.
+- Multiple rooms can exist for the same question.
+- Questions are the prompt layer, not the primary destination.
+- Audio-first is acceptable for MVP, but the room model remains video-compatible.
+- Moderation is required early: backend-owned chat, profanity filtering, reporting, and host moderation controls.
 - [ ] Browse and create debate rooms
 - [ ] Join a room as speaker (video or audio) or audience
 - [ ] LiveKit video/audio integration

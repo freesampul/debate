@@ -1,0 +1,14 @@
+{
+  "name": "debate-app",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "backend"
+  ],
+  "scripts": {
+    "backend:dev": "npm run dev --workspace=backend",
+    "backend:build": "npm run build --workspace=backend",
+    "shared:build": "npm run build --workspace=shared",
+    "build": "npm run build --workspace=shared && npm run build --workspace=backend"
+  }
+}

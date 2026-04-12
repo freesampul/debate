@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Debate",
+    "slug": "debate-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "debate",
+    "ios": {
+      "bundleIdentifier": "com.debate.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Debate connects to your development server on the local network."
+      }
+    },
+    "android": {
+      "package": "com.debate.app",
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "android": {
+            "audioType": "communication"
+          },
+          "ios": {
+            "enableMultitaskingCameraAccess": false
+          }
+        }
+      ],
+      "@config-plugins/react-native-webrtc"
+    ]
+  }
+}

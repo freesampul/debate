@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "paths": {
+      "@debate-app/shared": ["../shared/dist/index.d.ts"]
+    }
+  }
+}
