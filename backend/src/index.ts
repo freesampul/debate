@@ -14,14 +14,36 @@ import notificationsRouter from './routes/notifications'
 
 const app = express()
 const port = process.env.PORT ?? 3000
+const isProduction = process.env.NODE_ENV === 'production'
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 
-// CORS — explicit allowlist in production; in dev allow LAN + Metro (devices use http://<host>:<port>)
+function corsOrigin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void): void {
+  if (!isProduction) {
+    callback(null, true)
+    return
+  }
+
+  // Native mobile apps, server-to-server calls, and curl requests commonly omit Origin.
+  if (!origin) {
+    callback(null, true)
+    return
+  }
+
+  if (allowedOrigins.includes(origin)) {
+    callback(null, true)
+    return
+  }
+
+  callback(new Error(`CORS blocked for origin: ${origin}`))
+}
+
+// CORS — strict for browser origins in production, permissive for native/no-origin clients.
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === 'production'
-        ? (process.env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim())
-        : true,
+    origin: corsOrigin,
     credentials: true,
   })
 )
@@ -29,11 +51,13 @@ app.use(
 app.use(express.json())
 
 // Request logger (dev only)
-if (process.env.NODE_ENV !== 'production') {
+if (!isProduction) {
   app.use((req, _res, next) => {
     console.log(`[req] ${req.method} ${req.path}`)
     next()
   })
+} else if (allowedOrigins.length === 0) {
+  console.warn('[server] ALLOWED_ORIGINS is empty in production; browser requests will be blocked, native clients without Origin will still work.')
 }
 
 // Global rate limit — applied before all routes
