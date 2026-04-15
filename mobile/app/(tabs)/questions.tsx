@@ -104,7 +104,7 @@ export default function QuestionsScreen(): React.ReactElement {
       }
 
       router.push({
-        pathname: '/(tabs)/create',
+        pathname: '/create',
         params: { questionId: question.id, questionContent: question.content },
       })
     } catch {

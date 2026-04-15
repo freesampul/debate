@@ -50,7 +50,7 @@ export default function QuestionDetailScreen(): React.ReactElement {
       return
     }
     router.push({
-      pathname: '/(tabs)/create',
+      pathname: '/create',
       params: {
         questionId: data.question.id,
         questionContent: data.question.content,

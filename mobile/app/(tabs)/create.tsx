@@ -81,7 +81,7 @@ export default function CreateScreen(): React.ReactElement {
             <View style={styles.questionCard}>
               <Text style={styles.questionCardLabel}>Linked question</Text>
               <Text style={styles.questionCardContent}>{questionContent}</Text>
-              <Pressable onPress={() => router.push('/(tabs)/questions')}>
+              <Pressable onPress={() => router.push('/questions')}>
                 <Text style={styles.questionCardAction}>Choose a different question</Text>
               </Pressable>
             </View>
