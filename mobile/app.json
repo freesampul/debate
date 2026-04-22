@@ -5,6 +5,9 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0B0B0F"
+    },
     "scheme": "debate",
     "ios": {
       "bundleIdentifier": "com.debate.app",

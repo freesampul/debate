@@ -10,13 +10,19 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import * as Linking from 'expo-linking'
+import { useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { textStyles, theme } from '../../theme/voltage'
 
 export default function LoginScreen(): React.ReactElement {
+  const params = useLocalSearchParams<{ authError?: string | string[] }>()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
+  const authError = Array.isArray(params.authError) ? params.authError[0] : params.authError
+  const redirectTo = Linking.createURL('login', { scheme: 'debate' })
 
   const handleSendLink = async (): Promise<void> => {
     const trimmed = email.trim().toLowerCase()
@@ -30,13 +36,13 @@ export default function LoginScreen(): React.ReactElement {
       email: trimmed,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: 'debate://login',
+        emailRedirectTo: redirectTo,
       },
     })
     setLoading(false)
 
     if (error) {
-      Alert.alert('Error', 'Failed to send magic link. Please try again.')
+      Alert.alert('Error', error.message || 'Failed to send magic link. Please try again.')
       return
     }
 
@@ -52,6 +58,13 @@ export default function LoginScreen(): React.ReactElement {
         <View style={styles.inner}>
           <Text style={styles.appName}>Debate</Text>
           <Text style={styles.tagline}>Join live debates. Vote in real time.</Text>
+
+          {authError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorTitle}>Sign-in link failed</Text>
+              <Text style={styles.errorBody}>{authError}</Text>
+            </View>
+          ) : null}
 
           {sent ? (
             <View style={styles.sentBox}>
@@ -71,7 +84,7 @@ export default function LoginScreen(): React.ReactElement {
                 value={email}
                 onChangeText={setEmail}
                 placeholder="you@example.com"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={theme.color.dim}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -84,7 +97,7 @@ export default function LoginScreen(): React.ReactElement {
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={theme.color.proInk} />
                 ) : (
                   <Text style={styles.buttonText}>Send magic link</Text>
                 )}
@@ -100,7 +113,7 @@ export default function LoginScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#111827',
+    backgroundColor: theme.color.bg,
   },
   container: {
     flex: 1,
@@ -108,45 +121,43 @@ const styles = StyleSheet.create({
   inner: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: theme.spacing['2xl'],
     paddingBottom: 40,
   },
   appName: {
-    fontSize: 42,
-    fontWeight: '800',
-    color: '#f9fafb',
+    ...textStyles.displayXL,
     textAlign: 'center',
     marginBottom: 8,
-    letterSpacing: -1,
+    color: theme.color.ink,
   },
   tagline: {
-    fontSize: 16,
-    color: '#9ca3af',
+    ...textStyles.body,
     textAlign: 'center',
     marginBottom: 48,
+    color: theme.color.muted,
   },
   form: {
-    gap: 12,
+    gap: theme.spacing.md,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#d1d5db',
+    ...textStyles.label,
     marginBottom: 4,
+    color: theme.color.ink,
   },
   input: {
-    backgroundColor: '#1f2937',
-    borderRadius: 10,
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: '#374151',
-    color: '#f9fafb',
+    borderColor: theme.color.line,
+    color: theme.color.ink,
     fontSize: 16,
     paddingHorizontal: 16,
     paddingVertical: 14,
+    fontFamily: theme.font.body,
   },
   button: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 10,
+    backgroundColor: theme.color.pro,
+    borderRadius: theme.radius.pill,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 4,
@@ -158,31 +169,45 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: theme.color.proInk,
+    fontFamily: theme.font.displayBold,
     fontSize: 16,
-    fontWeight: '700',
   },
   sentBox: {
     alignItems: 'center',
-    gap: 12,
+    gap: theme.spacing.md,
+  },
+  errorBox: {
+    backgroundColor: theme.color.dangerSurface,
+    borderWidth: 1,
+    borderColor: theme.color.danger,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
+    gap: 6,
+  },
+  errorTitle: {
+    ...textStyles.bodySemibold,
+    color: theme.color.con,
+  },
+  errorBody: {
+    ...textStyles.bodySM,
+    color: theme.color.con,
   },
   sentTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#f9fafb',
+    ...textStyles.titleLG,
   },
   sentBody: {
-    fontSize: 15,
-    color: '#9ca3af',
     textAlign: 'center',
-    lineHeight: 22,
+    ...textStyles.body,
   },
   resendButton: {
     marginTop: 8,
   },
   resendText: {
-    color: '#4f46e5',
+    color: theme.color.pro,
+    fontFamily: theme.font.bodySemibold,
     fontSize: 15,
-    fontWeight: '600',
   },
 })

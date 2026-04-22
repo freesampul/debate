@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native'
 import type { VoteCounts } from '@debate-app/shared'
+import { textStyles, theme } from '../theme/voltage'
 
 interface VotingDialProps {
   counts: VoteCounts
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
     top: 0,
   },
   againstHalf: {
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.color.con,
     left: 0,
   },
   forHalfClip: {
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   forHalf: {
-    backgroundColor: '#22c55e',
+    backgroundColor: theme.color.pro,
     left: -DIAL_SIZE / 2,
   },
   centerCap: {
@@ -119,7 +120,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#1f2937',
+    backgroundColor: theme.color.surface,
     bottom: 0,
     alignSelf: 'center',
     left: DIAL_SIZE / 2 - 12,
@@ -138,7 +139,7 @@ const styles = StyleSheet.create({
   needle: {
     width: NEEDLE_WIDTH,
     height: NEEDLE_LENGTH,
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.color.ink,
     borderRadius: NEEDLE_WIDTH / 2,
     position: 'absolute',
     bottom: 0,
@@ -152,19 +153,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   labelText: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    ...textStyles.label,
   },
   againstLabel: {
-    color: '#ef4444',
+    color: theme.color.con,
   },
   forLabel: {
-    color: '#22c55e',
+    color: theme.color.pro,
   },
   totalText: {
-    fontSize: 13,
-    color: '#9ca3af',
     marginTop: 4,
+    ...textStyles.bodySM,
   },
 })

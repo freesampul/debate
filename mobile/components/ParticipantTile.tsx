@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import type { TrackPublication, Participant } from 'livekit-client'
+import { theme } from '../theme/voltage'
 // Track is NOT imported as a value — livekit-client uses DOMException and other browser
 // APIs that crash in React Native at module load time. Use the string literal instead.
 
@@ -84,15 +85,15 @@ const styles = StyleSheet.create({
   tile: {
     width: 120,
     height: 140,
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
     overflow: 'hidden',
-    backgroundColor: '#1f2937',
+    backgroundColor: theme.color.surface,
     margin: 6,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   tileSpeaking: {
-    borderColor: '#22c55e',
+    borderColor: theme.color.accent,
   },
   video: {
     flex: 1,
@@ -101,19 +102,19 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#374151',
+    backgroundColor: theme.color.surfaceAlt,
   },
   avatarText: {
     fontSize: 40,
-    color: '#9ca3af',
-    fontWeight: '700',
+    color: theme.color.muted,
+    fontFamily: theme.font.displayBold,
   },
   nameTag: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: theme.color.overlay,
     paddingHorizontal: 8,
     paddingVertical: 4,
     flexDirection: 'row',
@@ -123,20 +124,20 @@ const styles = StyleSheet.create({
   nameText: {
     flex: 1,
     fontSize: 12,
-    color: '#f9fafb',
-    fontWeight: '600',
+    color: theme.color.ink,
+    fontFamily: theme.font.bodySemibold,
   },
   speakingDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22c55e',
+    backgroundColor: theme.color.accent,
   },
   mutedBadge: {
     position: 'absolute',
     top: 6,
     right: 6,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: theme.color.overlaySoft,
     borderRadius: 10,
     paddingHorizontal: 4,
     paddingVertical: 2,
