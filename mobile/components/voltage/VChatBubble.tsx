@@ -50,8 +50,8 @@ export function VChatBubble({
         <Text style={[styles.messageText, isOwn && styles.messageTextOwn]}>{text}</Text>
       </View>
       {isOwn ? (
-        <View style={[styles.avatar, { backgroundColor: theme.color.pro }]}>
-          <Text style={[styles.avatarText, { color: theme.color.proInk }]}>{initialFromUser(userId)}</Text>
+        <View style={[styles.avatar, { backgroundColor: avatar.bg }]}>
+          <Text style={[styles.avatarText, { color: avatar.fg }]}>{initialFromUser(userId)}</Text>
         </View>
       ) : null}
     </View>

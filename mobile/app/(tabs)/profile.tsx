@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -11,10 +11,77 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useAuth } from '../../hooks/useAuth'
-import { supabase } from '../../lib/supabase'
-import { getMyProfile, listNotifications, markNotificationRead, updateMyProfile } from '../../lib/api'
 import type { Notification, UserProfile } from '@debate-app/shared'
+import { VButton, VPill } from '../../components/voltage'
+import { useAuth } from '../../hooks/useAuth'
+import { getMyProfile, listNotifications, markNotificationRead, updateMyProfile } from '../../lib/api'
+import { supabase } from '../../lib/supabase'
+import { textStyles, theme } from '../../theme/voltage'
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function notificationActorName(notification: Notification): string | null {
+  const candidateKeys = [
+    'actor_display_name',
+    'actor_username',
+    'host_display_name',
+    'host_username',
+    'follower_display_name',
+    'follower_username',
+  ]
+
+  for (const key of candidateKeys) {
+    const value = notification.data[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+
+  return null
+}
+
+function notificationQuestion(notification: Notification): string | null {
+  const value = notification.data.question_content
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function notificationRoomTitle(notification: Notification): string | null {
+  const value = notification.data.room_title
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function describeNotification(notification: Notification): string {
+  const actor = notificationActorName(notification)
+  const question = notificationQuestion(notification)
+  const roomTitle = notificationRoomTitle(notification)
+
+  if (notification.type === 'follow') {
+    return actor ? `${actor} followed you` : 'Someone followed you'
+  }
+
+  if (notification.type === 'speaker_live') {
+    if (roomTitle && actor) return `${actor} is live in "${roomTitle}"`
+    if (question && actor) return `${actor} is live debating "${question}"`
+    if (actor) return `${actor} is live now`
+    return 'A followed debater is live'
+  }
+
+  if (notification.type === 'question_live') {
+    if (question && actor) return `${actor} started a live room for "${question}"`
+    if (question) return `A live room started for "${question}"`
+    return 'A question you engaged with has a live room'
+  }
+
+  if (notification.type === 'room_invite') return 'You were invited to speak'
+  if (notification.type === 'invite_accepted') return 'A speaker accepted your invite'
+  if (notification.type === 'invite_declined') return 'A speaker declined your invite'
+  if (notification.type === 'reaction_received') return 'You received a reaction'
+  return notification.type
+}
 
 export default function ProfileScreen(): React.ReactElement {
   const { session } = useAuth()
@@ -70,7 +137,7 @@ export default function ProfileScreen(): React.ReactElement {
     }
   }, [username, displayName, bio])
 
-  const handleLogout = async (): Promise<void> => {
+  const handleLogout = useCallback((): void => {
     Alert.alert(
       'Sign out',
       'Are you sure you want to sign out?',
@@ -90,24 +157,7 @@ export default function ProfileScreen(): React.ReactElement {
         },
       ],
     )
-  }
-
-  if (!session || loading || !profile) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-      </View>
-    )
-  }
-
-  const email = session.user.email ?? 'Unknown'
-  const joined = new Date(session.user.created_at).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-  const initial = (displayName || username || email).charAt(0).toUpperCase()
-  const unreadCount = notifications.filter((notification) => !notification.read_at).length
+  }, [])
 
   const handleNotificationPress = useCallback(async (notification: Notification): Promise<void> => {
     try {
@@ -126,12 +176,10 @@ export default function ProfileScreen(): React.ReactElement {
         router.push(`/room/${roomId}`)
         return
       }
-
       if (questionId) {
         router.push(`/question/${questionId}`)
         return
       }
-
       if (followerId) {
         router.push(`/user/${followerId}`)
       }
@@ -140,87 +188,70 @@ export default function ProfileScreen(): React.ReactElement {
     }
   }, [router])
 
-  function notificationActorName(notification: Notification): string | null {
-    const candidateKeys = ['actor_display_name', 'actor_username', 'host_display_name', 'host_username', 'follower_display_name', 'follower_username']
+  const unreadCount = useMemo(
+    () => notifications.filter((notification) => !notification.read_at).length,
+    [notifications],
+  )
 
-    for (const key of candidateKeys) {
-      const value = notification.data[key]
-      if (typeof value === 'string' && value.trim()) return value
-    }
-
-    return null
+  if (!session || loading || !profile) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={theme.color.pro} />
+      </View>
+    )
   }
 
-  function notificationQuestion(notification: Notification): string | null {
-    const value = notification.data.question_content
-    return typeof value === 'string' && value.trim() ? value.trim() : null
-  }
-
-  function notificationRoomTitle(notification: Notification): string | null {
-    const value = notification.data.room_title
-    return typeof value === 'string' && value.trim() ? value.trim() : null
-  }
-
-  function describeNotification(notification: Notification): string {
-    const actor = notificationActorName(notification)
-    const question = notificationQuestion(notification)
-    const roomTitle = notificationRoomTitle(notification)
-
-    if (notification.type === 'follow') {
-      return actor ? `${actor} followed you` : 'Someone followed you'
-    }
-
-    if (notification.type === 'speaker_live') {
-      if (roomTitle && actor) return `${actor} is live in "${roomTitle}"`
-      if (question && actor) return `${actor} is live debating "${question}"`
-      if (actor) return `${actor} is live now`
-      return 'A followed debater is live'
-    }
-
-    if (notification.type === 'question_live') {
-      if (question && actor) return `${actor} started a live room for "${question}"`
-      if (question) return `A live room started for "${question}"`
-      return 'A question you engaged with has a live room'
-    }
-
-    if (notification.type === 'room_invite') return 'You were invited to speak'
-    if (notification.type === 'invite_accepted') return 'A speaker accepted your invite'
-    if (notification.type === 'invite_declined') return 'A speaker declined your invite'
-    if (notification.type === 'reaction_received') return 'You received a reaction'
-    return notification.type
-  }
+  const email = session.user.email ?? 'Unknown'
+  const joined = new Date(session.user.created_at).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+  const initial = (displayName || username || email).charAt(0).toUpperCase()
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.avatarContainer}>
+        <View style={styles.headerBlock}>
+          <Text style={styles.kicker}>ME</Text>
+          <Text style={styles.title}>Profile</Text>
+        </View>
+
+        <View style={styles.heroCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarLetter}>{initial}</Text>
           </View>
           <Text style={styles.handle}>@{profile.username}</Text>
+          <Text style={styles.subcopy}>{displayName || 'No display name yet'}</Text>
+          <View style={styles.pillRow}>
+            <VPill label={`${profile.follower_count} FOLLOWERS`} />
+            <VPill label={`${profile.following_count} FOLLOWING`} />
+          </View>
         </View>
 
-        <View style={styles.statsCard}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.follower_count}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.following_count}</Text>
-            <Text style={styles.statLabel}>Following</Text>
-          </View>
-          <View style={styles.stat}>
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
             <Text style={styles.statValue}>{profile.hosted_room_count}</Text>
-            <Text style={styles.statLabel}>Hosted</Text>
+            <Text style={styles.statLabel}>HOSTED</Text>
           </View>
-          <View style={styles.stat}>
+          <View style={styles.statCard}>
             <Text style={styles.statValue}>{profile.speaker_room_count}</Text>
-            <Text style={styles.statLabel}>Speaker</Text>
+            <Text style={styles.statLabel}>SPOKE</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{profile.follower_count}</Text>
+            <Text style={styles.statLabel}>FOLLOWERS</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{profile.following_count}</Text>
+            <Text style={styles.statLabel}>FOLLOWING</Text>
           </View>
         </View>
 
         <View style={styles.formCard}>
-          <Text style={styles.label}>Username</Text>
+          <Text style={styles.sectionTitle}>Identity</Text>
+
+          <Text style={styles.fieldLabel}>Handle</Text>
           <TextInput
             style={styles.input}
             value={username}
@@ -228,17 +259,21 @@ export default function ProfileScreen(): React.ReactElement {
             autoCapitalize="none"
             autoCorrect={false}
             editable={!saving}
+            placeholder="@handle"
+            placeholderTextColor={theme.color.dim}
           />
 
-          <Text style={styles.label}>Display name</Text>
+          <Text style={styles.fieldLabel}>Display name</Text>
           <TextInput
             style={styles.input}
             value={displayName}
             onChangeText={setDisplayName}
             editable={!saving}
+            placeholder="How people see you"
+            placeholderTextColor={theme.color.dim}
           />
 
-          <Text style={styles.label}>Bio</Text>
+          <Text style={styles.fieldLabel}>Bio</Text>
           <TextInput
             style={[styles.input, styles.bioInput]}
             value={bio}
@@ -248,35 +283,51 @@ export default function ProfileScreen(): React.ReactElement {
             maxLength={280}
             editable={!saving}
             textAlignVertical="top"
+            placeholder="What do you fight about?"
+            placeholderTextColor={theme.color.dim}
           />
           <Text style={styles.charCount}>{bio.length}/280</Text>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Email</Text>
+            <Text style={styles.infoLabel}>EMAIL</Text>
             <Text style={styles.infoValue}>{email}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Member since</Text>
+            <Text style={styles.infoLabel}>MEMBER SINCE</Text>
             <Text style={styles.infoValue}>{joined}</Text>
+          </View>
+
+          <View style={styles.buttonRow}>
+            <VButton
+              label={saving ? 'Saving…' : 'Save profile'}
+              variant="primary"
+              onPress={() => { void handleSave() }}
+              disabled={saving || !username.trim()}
+              style={styles.buttonHalf}
+            />
+            <VButton
+              label={loggingOut ? 'Signing out…' : 'Sign out'}
+              variant="ghost"
+              onPress={handleLogout}
+              disabled={loggingOut}
+              style={styles.buttonHalf}
+            />
           </View>
         </View>
 
-        <Pressable
-          style={({ pressed }) => [styles.saveButton, pressed && styles.saveButtonPressed, saving && styles.buttonDisabled]}
-          onPress={() => { void handleSave() }}
-          disabled={saving}
-        >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Save profile</Text>}
-        </Pressable>
-
         <View style={styles.inboxCard}>
           <View style={styles.inboxHeader}>
-            <Text style={styles.inboxTitle}>Notifications</Text>
+            <Text style={styles.sectionTitle}>Inbox</Text>
             {unreadCount > 0 ? (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
-              </View>
-            ) : null}
+              <VPill
+                label={`${unreadCount} NEW`}
+                bg={theme.color.con}
+                fg={theme.color.conInk}
+                border={theme.color.con}
+              />
+            ) : (
+              <VPill label="ALL CAUGHT UP" />
+            )}
           </View>
           {notifications.length === 0 ? (
             <Text style={styles.emptyInbox}>No notifications yet.</Text>
@@ -284,150 +335,218 @@ export default function ProfileScreen(): React.ReactElement {
             notifications.map((notification) => (
               <Pressable
                 key={notification.id}
-                style={[styles.notificationRow, !notification.read_at && styles.notificationUnread]}
+                style={[
+                  styles.notificationRow,
+                  !notification.read_at && styles.notificationUnread,
+                ]}
                 onPress={() => { void handleNotificationPress(notification) }}
               >
-                <Text style={styles.notificationText}>{describeNotification(notification)}</Text>
-                <Text style={styles.notificationMeta}>
-                  {new Date(notification.created_at).toLocaleDateString()}
-                </Text>
+                <Text style={styles.notificationCopy}>{describeNotification(notification)}</Text>
+                <Text style={styles.notificationMeta}>{formatDate(notification.created_at)}</Text>
               </Pressable>
             ))
           )}
         </View>
-
-        <Pressable
-          style={({ pressed }) => [styles.logoutButton, pressed && styles.logoutButtonPressed]}
-          onPress={handleLogout}
-          disabled={loggingOut}
-        >
-          {loggingOut ? (
-            <ActivityIndicator color="#ef4444" />
-          ) : (
-            <Text style={styles.logoutText}>Sign out</Text>
-          )}
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#111827' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111827' },
-  container: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 32, gap: 20 },
-  avatarContainer: { alignItems: 'center', gap: 10 },
+  safe: {
+    flex: 1,
+    backgroundColor: theme.color.bg,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.bg,
+  },
+  container: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: 120,
+    gap: theme.spacing.xl,
+  },
+  headerBlock: {
+    gap: theme.spacing.sm,
+  },
+  kicker: {
+    ...textStyles.label,
+    color: theme.color.pro,
+  },
+  title: {
+    ...textStyles.displayXL,
+  },
+  heroCard: {
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
   avatar: {
     width: 88,
     height: 88,
-    borderRadius: 44,
-    backgroundColor: '#4f46e5',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.pro,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarLetter: { fontSize: 40, fontWeight: '700', color: '#fff' },
-  handle: { color: '#f9fafb', fontSize: 18, fontWeight: '700' },
-  statsCard: {
+  avatarLetter: {
+    fontFamily: theme.font.displayBold,
+    fontSize: 34,
+    lineHeight: 36,
+    color: theme.color.proInk,
+  },
+  handle: {
+    fontFamily: theme.font.monoBold,
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: theme.color.ink,
+  },
+  subcopy: {
+    ...textStyles.bodySM,
+    textAlign: 'center',
+  },
+  pillRow: {
     flexDirection: 'row',
-    backgroundColor: '#1f2937',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#374151',
-    paddingVertical: 14,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
   },
-  stat: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { color: '#f9fafb', fontSize: 18, fontWeight: '800' },
-  statLabel: { color: '#9ca3af', fontSize: 12, fontWeight: '600' },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+  },
+  statCard: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.xl,
+    gap: theme.spacing.xs,
+  },
+  statValue: {
+    ...textStyles.displayMD,
+  },
+  statLabel: {
+    ...textStyles.label,
+    color: theme.color.dim,
+  },
   formCard: {
-    backgroundColor: '#1f2937',
-    borderRadius: 14,
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
     borderWidth: 1,
-    borderColor: '#374151',
-    padding: 16,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    gap: theme.spacing.md,
   },
-  label: { color: '#d1d5db', fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 14 },
+  sectionTitle: {
+    ...textStyles.titleLG,
+  },
+  fieldLabel: {
+    ...textStyles.label,
+  },
   input: {
-    backgroundColor: '#111827',
-    borderRadius: 10,
+    minHeight: 56,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: '#374151',
-    color: '#f9fafb',
-    fontSize: 15,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: theme.color.line,
+    backgroundColor: theme.color.surfaceAlt,
+    paddingHorizontal: theme.spacing.lg,
+    color: theme.color.ink,
+    fontFamily: theme.font.body,
+    fontSize: theme.type.body.size,
+    lineHeight: theme.type.body.lineHeight,
   },
-  bioInput: { minHeight: 110, paddingTop: 12 },
-  charCount: { color: '#6b7280', fontSize: 11, textAlign: 'right', marginTop: 4 },
+  bioInput: {
+    minHeight: 116,
+    paddingVertical: theme.spacing.lg,
+  },
+  charCount: {
+    fontFamily: theme.font.monoMedium,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    color: theme.color.dim,
+    textAlign: 'right',
+    textTransform: 'uppercase',
+  },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 16,
-    marginTop: 16,
-  },
-  infoLabel: { color: '#9ca3af', fontSize: 13, fontWeight: '600' },
-  infoValue: { color: '#f9fafb', fontSize: 13, fontWeight: '500', flex: 1, textAlign: 'right' },
-  saveButton: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 12,
-    paddingVertical: 15,
     alignItems: 'center',
+    gap: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.color.line,
+    paddingTop: theme.spacing.md,
   },
-  saveButtonPressed: { opacity: 0.85 },
-  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  buttonDisabled: { opacity: 0.6 },
+  infoLabel: {
+    ...textStyles.label,
+    color: theme.color.dim,
+  },
+  infoValue: {
+    ...textStyles.bodySM,
+    color: theme.color.ink,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+  },
+  buttonHalf: {
+    flex: 1,
+  },
   inboxCard: {
-    backgroundColor: '#1f2937',
-    borderRadius: 14,
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
     borderWidth: 1,
-    borderColor: '#374151',
-    padding: 16,
-    gap: 12,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    gap: theme.spacing.md,
   },
   inboxHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  inboxTitle: { color: '#f9fafb', fontSize: 18, fontWeight: '700' },
-  unreadBadge: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    backgroundColor: '#4f46e5',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: theme.spacing.md,
   },
-  unreadBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  emptyInbox: { color: '#9ca3af', fontSize: 14 },
   notificationRow: {
-    backgroundColor: '#111827',
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: '#374151',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 4,
+    borderColor: theme.color.line,
+    backgroundColor: theme.color.surfaceAlt,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.xs,
   },
   notificationUnread: {
-    borderColor: '#4f46e5',
+    borderColor: theme.color.pro,
   },
-  notificationText: {
-    color: '#f9fafb',
-    fontSize: 14,
-    fontWeight: '600',
+  notificationCopy: {
+    ...textStyles.body,
   },
   notificationMeta: {
-    color: '#9ca3af',
-    fontSize: 12,
+    fontFamily: theme.font.monoMedium,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: theme.color.dim,
   },
-  logoutButton: {
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#ef4444',
-    paddingVertical: 14,
-    alignItems: 'center',
+  emptyInbox: {
+    ...textStyles.bodySM,
   },
-  logoutButtonPressed: { backgroundColor: 'rgba(239,68,68,0.1)' },
-  logoutText: { color: '#ef4444', fontSize: 16, fontWeight: '700' },
 })

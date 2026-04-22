@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native'
+import type { LayoutChangeEvent } from 'react-native'
 import { theme } from '../../theme/voltage'
 
 export interface VMeterProps {
@@ -8,7 +9,6 @@ export interface VMeterProps {
   orientation?: 'h' | 'v'
 }
 
-const HORIZONTAL_WIDTH = 224
 const HORIZONTAL_HEIGHT = 14
 const VERTICAL_WIDTH = 14
 const VERTICAL_HEIGHT = 40
@@ -25,6 +25,11 @@ export function VMeter({
   const safeForPct = clampPercent(forPct)
   const againstPct = 100 - safeForPct
   const animatedFor = useRef(new Animated.Value(safeForPct)).current
+  const [containerWidth, setContainerWidth] = useState(0)
+  const handleLayout = (e: LayoutChangeEvent): void => {
+    const w = e.nativeEvent.layout.width
+    if (w > 0 && w !== containerWidth) setContainerWidth(w)
+  }
 
   useEffect(() => {
     Animated.timing(animatedFor, {
@@ -37,12 +42,12 @@ export function VMeter({
 
   const forDimension = animatedFor.interpolate({
     inputRange: [0, 100],
-    outputRange: orientation === 'h' ? [0, HORIZONTAL_WIDTH] : [0, VERTICAL_HEIGHT],
+    outputRange: orientation === 'h' ? [0, containerWidth] : [0, VERTICAL_HEIGHT],
   })
 
   const againstDimension = animatedFor.interpolate({
     inputRange: [0, 100],
-    outputRange: orientation === 'h' ? [HORIZONTAL_WIDTH, 0] : [VERTICAL_HEIGHT, 0],
+    outputRange: orientation === 'h' ? [containerWidth, 0] : [VERTICAL_HEIGHT, 0],
   })
 
   const voteLabel = useMemo(() => {
@@ -68,9 +73,13 @@ export function VMeter({
         <Text style={styles.totalLabel}>{voteLabel}</Text>
         <Text style={[styles.percentLabel, styles.conLabel]}>{againstPct}% AGAINST</Text>
       </View>
-      <View style={styles.horizontalMeter}>
-        <Animated.View style={[styles.horizontalFor, { width: forDimension }]} />
-        <Animated.View style={[styles.horizontalAgainst, { width: againstDimension }]} />
+      <View style={styles.horizontalMeter} onLayout={handleLayout}>
+        {containerWidth > 0 ? (
+          <>
+            <Animated.View style={[styles.horizontalFor, { width: forDimension }]} />
+            <Animated.View style={[styles.horizontalAgainst, { width: againstDimension }]} />
+          </>
+        ) : null}
       </View>
     </View>
   )
@@ -79,9 +88,9 @@ export function VMeter({
 const styles = StyleSheet.create({
   horizontalWrap: {
     gap: theme.spacing.sm,
+    alignSelf: 'stretch',
   },
   horizontalLabels: {
-    width: HORIZONTAL_WIDTH,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -110,7 +119,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   horizontalMeter: {
-    width: HORIZONTAL_WIDTH,
     height: HORIZONTAL_HEIGHT,
     borderRadius: theme.radius.pill,
     overflow: 'hidden',
