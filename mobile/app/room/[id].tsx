@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,38 +13,47 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import type { Message, RoomParticipantWithUser } from '@debate-app/shared'
+import { VButton, VChatBubble, VLiveBadge, VMeter, VPill, VSpeakerTile } from '../../components/voltage'
+import { useAuth } from '../../hooks/useAuth'
+import { useLiveKitRoom } from '../../hooks/useLiveKitRoom'
+import { useParticipants } from '../../hooks/useParticipants'
 import { useRoom } from '../../hooks/useRoom'
 import { useVotes } from '../../hooks/useVotes'
-import { useAuth } from '../../hooks/useAuth'
-import { useParticipants } from '../../hooks/useParticipants'
-import { useLiveKitRoom } from '../../hooks/useLiveKitRoom'
 import {
-  startRoom,
+  banParticipant,
   endRoom,
-  sendMessage,
   removeMessage,
+  removeParticipant,
   reportMessage,
   reportRoom,
-  removeParticipant,
-  banParticipant,
+  sendMessage,
+  startRoom,
 } from '../../lib/api'
-import { VotingDial } from '../../components/VotingDial'
-import { ChatMessage } from '../../components/ChatMessage'
-import { ParticipantTile } from '../../components/ParticipantTile'
-import type { Message, RoomParticipantWithUser } from '@debate-app/shared'
+import { textStyles, theme } from '../../theme/voltage'
 
-// Plain-object shim that satisfies ParticipantTile's Participant prop without
-// importing livekit-client at the top level (which crashes in Expo Go / React Native
-// because livekit-client accesses DOMException and other browser APIs at module load).
-// The cast to `any` is intentional — Participant is used as a structural type here.
-function dbParticipantToLKShim(p: { user_id: string; username: string }): any { // eslint-disable-line @typescript-eslint/no-explicit-any
-  return {
-    identity: p.user_id,
-    metadata: JSON.stringify({ username: p.username }),
-    isMicrophoneEnabled: false,
-    permissions: { canPublish: true },
-    trackPublications: new Map(),
+function formatTime(isoString: string): string {
+  const date = new Date(isoString)
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function messageContent(message: Message): string {
+  if (message.moderation_status === 'removed') {
+    return message.filtered_content ?? 'Message removed'
   }
+  return message.filtered_content ?? message.content
+}
+
+function identityLabel(userId: string): string {
+  return `@${userId.slice(0, 8)}`
+}
+
+function statusPill(status: 'waiting' | 'live' | 'ended'): React.ReactElement {
+  if (status === 'live') return <VLiveBadge />
+  if (status === 'waiting') {
+    return <VPill label="WAITING" bg={theme.color.warn} fg={theme.color.conInk} border={theme.color.warn} />
+  }
+  return <VPill label="ENDED" bg={theme.color.surfaceAlt} fg={theme.color.dim} border={theme.color.line} />
 }
 
 export default function RoomScreen(): React.ReactElement {
@@ -61,7 +69,7 @@ export default function RoomScreen(): React.ReactElement {
 
   const [messageText, setMessageText] = useState('')
   const [sending, setSending] = useState(false)
-  const flatListRef = useRef<FlatList>(null)
+  const flatListRef = useRef<FlatList<Message>>(null)
 
   const isHost = room?.host_id === userId
   const isLive = room?.status === 'live'
@@ -69,7 +77,20 @@ export default function RoomScreen(): React.ReactElement {
   const isEnded = room?.status === 'ended'
   const isSpeaker = lkRoom.myRole === 'speaker'
 
-  // ─── Message sending ──────────────────────────────────────────────────────
+  const liveSpeakers = useMemo(
+    () => lkRoom.participants.filter((participant) => participant.canSpeak),
+    [lkRoom.participants],
+  )
+
+  const participantCount = participants.length
+  const speakerCount = dbSpeakers.length
+  const listenerCount = Math.max(0, participantCount - speakerCount)
+  const forPct = counts.total > 0 ? Math.round((counts.for / counts.total) * 100) : 50
+  const connectionLabel = lkRoom.connecting
+    ? 'Connecting to audio'
+    : lkRoom.connected
+      ? (isSpeaker ? (lkRoom.isMuted ? 'Connected as speaker (muted)' : 'Connected as speaker') : 'Connected as listener')
+      : (isHost && isWaiting ? 'Host controls ready' : 'Not connected to audio')
 
   const handleSendMessage = useCallback(async (): Promise<void> => {
     const text = messageText.trim()
@@ -83,14 +104,10 @@ export default function RoomScreen(): React.ReactElement {
     } finally {
       setSending(false)
     }
-  }, [messageText, userId, id])
+  }, [id, messageText, userId])
 
-  // ─── Audio / room controls ────────────────────────────────────────────────
-
-  /** Host: connect as speaker then transition the room to live */
   const handleStartRoom = useCallback(async (): Promise<void> => {
     try {
-      // Connect the host as a speaker first so they're live before anyone else joins
       if (!lkRoom.connected) {
         await lkRoom.connect('speaker')
       }
@@ -170,8 +187,6 @@ export default function RoomScreen(): React.ReactElement {
 
   const handleRoomReport = useCallback((): void => {
     if (!room || !room.question_id) return
-    const questionId = room.question_id
-    const roomId = room.id
     Alert.alert(
       'Report room',
       'Report this room for harassment, spam, or harmful content?',
@@ -182,7 +197,7 @@ export default function RoomScreen(): React.ReactElement {
           style: 'destructive',
           onPress: async () => {
             try {
-              await reportRoom(questionId, roomId, 'harassment')
+              await reportRoom(room.question_id as string, room.id, 'harassment')
               Alert.alert('Reported', 'Thanks. Your report was submitted.')
             } catch {
               Alert.alert('Error', 'Failed to report this room.')
@@ -262,12 +277,35 @@ export default function RoomScreen(): React.ReactElement {
     )
   }, [id, isHost, router, userId])
 
-  // ─── Loading / error states ───────────────────────────────────────────────
+  const renderMessage = useCallback(({ item }: { item: Message }): React.ReactElement => {
+    const isOwn = item.user_id === userId
+    const displayContent = messageContent(item)
+
+    return (
+      <Pressable
+        onPress={isOwn && !isHost ? undefined : () => handleMessagePress(item)}
+        style={styles.messageCard}
+      >
+        <View style={[styles.messageMetaRow, isOwn && styles.messageMetaRowOwn]}>
+          {!isOwn ? (
+            <Text style={styles.messageHandle}>{identityLabel(item.user_id)}</Text>
+          ) : null}
+          <Text style={styles.messageTime}>{formatTime(item.created_at)}</Text>
+        </View>
+        <VChatBubble
+          userId={item.user_id}
+          text={displayContent}
+          side={null}
+          isOwn={isOwn}
+        />
+      </Pressable>
+    )
+  }, [handleMessagePress, isHost, userId])
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        <ActivityIndicator size="large" color={theme.color.pro} />
       </View>
     )
   }
@@ -277,31 +315,46 @@ export default function RoomScreen(): React.ReactElement {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.center}>
           <Text style={styles.errorText}>{error ?? 'Room not found.'}</Text>
-          <Pressable style={styles.retryButton} onPress={() => router.back()}>
-            <Text style={styles.retryText}>Go back</Text>
-          </Pressable>
+          <VButton label="Go back" variant="ghost" onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     )
   }
 
-  // ─── Speaker strip data ───────────────────────────────────────────────────
-  // When connected to LiveKit, use the live participant list (has speaking state).
-  // When not connected, fall back to the DB participant list (no speaking state).
-  const speakerTiles = lkRoom.connected
-    ? lkRoom.participants.filter((p) => p.canSpeak)
-    : dbSpeakers
-
-  const statusColor = room.status === 'live' ? '#22c55e' : room.status === 'waiting' ? '#f59e0b' : '#6b7280'
-  const statusLabel = room.status === 'live' ? 'Live' : room.status === 'waiting' ? 'Waiting' : 'Ended'
-  const participantCount = participants.length
-  const speakerCount = dbSpeakers.length
-  const audienceCount = Math.max(0, participantCount - speakerCount)
-  const connectionLabel = lkRoom.connecting
-    ? 'Connecting to audio'
-    : lkRoom.connected
-      ? (isSpeaker ? (lkRoom.isMuted ? 'Connected as speaker (muted)' : 'Connected as speaker') : 'Connected as listener')
-      : (isHost && isWaiting ? 'Host controls ready' : 'Not connected to audio')
+  const speakerElements = lkRoom.connected && liveSpeakers.length > 0
+    ? liveSpeakers.map((speaker) => (
+      <Pressable
+        key={speaker.identity}
+        onPress={() => {
+          const dbSpeaker = participants.find((entry) => entry.user_id === speaker.identity)
+          if (dbSpeaker) {
+            handleParticipantPress(dbSpeaker)
+          } else {
+            router.push(`/user/${speaker.identity}`)
+          }
+        }}
+        style={styles.speakerPressable}
+      >
+        <VSpeakerTile
+          name={speaker.username}
+          side={null}
+          speaking={speaker.isSpeaking}
+        />
+      </Pressable>
+    ))
+    : dbSpeakers.map((speaker) => (
+      <Pressable
+        key={speaker.user_id}
+        onPress={() => handleParticipantPress(speaker)}
+        style={styles.speakerPressable}
+      >
+        <VSpeakerTile
+          name={speaker.username}
+          side={null}
+          speaking={false}
+        />
+      </Pressable>
+    ))
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -310,251 +363,199 @@ export default function RoomScreen(): React.ReactElement {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={88}
       >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View style={styles.topBar}>
-            <Pressable onPress={handleBackPress} style={styles.topBarButton}>
-              <Text style={styles.topBarButtonText}>Back</Text>
-            </Pressable>
-            {room.question_id ? (
-              <Pressable
-                onPress={() => router.push(`/question/${room.question_id}`)}
-                style={styles.topBarButton}
-              >
-                <Text style={styles.topBarButtonText}>Question</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.topBarSpacer} />
-            )}
-          </View>
-          {room.question_content && (
-            <View style={styles.questionBadge}>
-              <View style={styles.questionBadgeTop}>
-                <Text style={styles.questionBadgeLabel}>QUESTION</Text>
-                {room.host_id !== userId && (
-                  <Pressable onPress={handleRoomReport}>
-                    <Text style={styles.questionBadgeAction}>Report</Text>
-                  </Pressable>
-                )}
-              </View>
-              <Text style={styles.questionBadgeText} numberOfLines={2}>{room.question_content}</Text>
-            </View>
-          )}
-          <View style={styles.headerTop}>
-            <Text style={styles.title} numberOfLines={2}>{room.title}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-              <Text style={styles.statusText}>{statusLabel}</Text>
-            </View>
-          </View>
-          <Text style={styles.topic} numberOfLines={3}>{room.topic}</Text>
-          <View style={styles.metaRow}>
-            <View style={styles.metaChip}>
-              <Text style={styles.metaChipLabel}>People</Text>
-              <Text style={styles.metaChipValue}>{participantCount}</Text>
-            </View>
-            <View style={styles.metaChip}>
-              <Text style={styles.metaChipLabel}>Speakers</Text>
-              <Text style={styles.metaChipValue}>{speakerCount}</Text>
-            </View>
-            <View style={styles.metaChip}>
-              <Text style={styles.metaChipLabel}>Audience</Text>
-              <Text style={styles.metaChipValue}>{audienceCount}</Text>
-            </View>
-            {isHost && (
-              <View style={[styles.metaChip, styles.hostChip]}>
-                <Text style={styles.metaChipValue}>Host</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.connectionCard}>
-            <Text style={styles.connectionLabel}>Audio status</Text>
-            <Text style={styles.connectionValue}>{connectionLabel}</Text>
-          </View>
-        </View>
-
-        {/* ── Speaker strip ───────────────────────────────────────────────── */}
-        {(speakerTiles.length > 0 || isLive || isWaiting) && (
-          <View style={styles.speakerStrip}>
-            {speakerTiles.length === 0 ? (
-              <Text style={styles.noSpeakersText}>
-                {isWaiting ? 'Waiting for speakers to join…' : 'No speakers connected yet'}
-              </Text>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.speakerScroll}
-              >
-                {lkRoom.connected
-                  ? // LiveKit participants — have speaking / muted state
-                    (speakerTiles as typeof lkRoom.participants).map((p) => {
-                      const dbParticipant = participants.find((entry) => entry.user_id === p.identity)
-                      return (
-                        <Pressable key={p.identity} onPress={() => dbParticipant && handleParticipantPress(dbParticipant)}>
-                          <ParticipantTile
-                            participant={{
-                              identity: p.identity,
-                              metadata: JSON.stringify({ username: p.username, avatar_url: p.avatar_url }),
-                              isMicrophoneEnabled: !p.isMuted,
-                              permissions: { canPublish: p.canSpeak },
-                              trackPublications: new Map(),
-                            } as any} // eslint-disable-line @typescript-eslint/no-explicit-any
-                            videoPublication={p.videoPublication}
-                            isSpeaking={p.isSpeaking}
-                            isMuted={p.isMuted}
-                          />
-                        </Pressable>
-                      )
-                    })
-                  : // DB participants — pre-connection, no live state
-                    (speakerTiles as typeof dbSpeakers).map((p) => (
-                      <Pressable key={p.user_id} onPress={() => handleParticipantPress(p)}>
-                        <ParticipantTile participant={dbParticipantToLKShim(p)} />
-                      </Pressable>
-                    ))}
-              </ScrollView>
-            )}
-          </View>
-        )}
-
-        {/* ── Voting ──────────────────────────────────────────────────────── */}
-        {!isEnded && (
-          <View style={styles.votingSection}>
-            <VotingDial counts={counts} />
-            <View style={styles.voteButtons}>
-              <Pressable
-                style={[styles.voteBtn, styles.againstBtn, userVote === 'against' && styles.voteBtnActive]}
-                onPress={() => { void vote('against') }}
-              >
-                <Text style={styles.voteBtnText}>Against</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.voteBtn, styles.forBtn, userVote === 'for' && styles.voteBtnActive]}
-                onPress={() => { void vote('for') }}
-              >
-                <Text style={styles.voteBtnText}>For</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* ── Chat ────────────────────────────────────────────────────────── */}
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ChatMessage
-              message={item}
-              isOwn={item.user_id === userId}
-              onPress={item.user_id === userId && !isHost ? undefined : () => handleMessagePress(item)}
-            />
-          )}
+          renderItem={renderMessage}
           style={styles.messageList}
           contentContainerStyle={styles.messageListContent}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          ListEmptyComponent={
-            <View style={styles.emptyChat}>
-              <Text style={styles.emptyChatText}>No messages yet — start the conversation.</Text>
+          ListHeaderComponent={(
+            <View style={styles.headerContent}>
+              <View style={styles.topBar}>
+                <VButton label="Back" variant="ghost" size="sm" onPress={handleBackPress} />
+                <View style={styles.topBarCenter}>
+                  {statusPill(room.status)}
+                  <VPill label={`${listenerCount} LISTENERS`} />
+                </View>
+                {room.question_id ? (
+                  <VButton
+                    label="Question"
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => router.push(`/question/${room.question_id}`)}
+                  />
+                ) : (
+                  <View style={styles.topBarSpacer} />
+                )}
+              </View>
+
+              <View style={styles.motionCard}>
+                <View style={styles.motionTop}>
+                  <Text style={styles.motionLabel}>THE MOTION</Text>
+                  {room.host_id !== userId ? (
+                    <Pressable onPress={handleRoomReport}>
+                      <Text style={styles.reportLink}>REPORT</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                <Text style={styles.motionTitle} numberOfLines={3}>
+                  {room.question_content ?? room.title}
+                </Text>
+                <Text style={styles.motionTopic} numberOfLines={3}>
+                  {room.topic}
+                </Text>
+                <View style={styles.metaPills}>
+                  <VPill label={`${speakerCount} SPEAKERS`} />
+                  <VPill label={`${listenerCount} AUDIENCE`} />
+                  {isHost ? (
+                    <VPill
+                      label="HOST"
+                      bg={theme.color.accent}
+                      fg={theme.color.conInk}
+                      border={theme.color.accent}
+                    />
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.connectionCard}>
+                <Text style={styles.connectionLabel}>AUDIO STATUS</Text>
+                <Text style={styles.connectionValue}>{connectionLabel}</Text>
+              </View>
+
+              <View style={styles.speakersCard}>
+                <Text style={styles.sectionTitle}>Speakers</Text>
+                {speakerElements.length > 0 ? (
+                  <View style={styles.speakerGrid}>{speakerElements}</View>
+                ) : (
+                  <Text style={styles.emptySpeakers}>
+                    {isWaiting ? 'Waiting for speakers to join.' : 'No speakers connected yet.'}
+                  </Text>
+                )}
+              </View>
+
+              {!isEnded ? (
+                <View style={styles.meterCard}>
+                  <VMeter forPct={forPct} total={counts.total} orientation="h" />
+                </View>
+              ) : null}
+
+              <View style={styles.actionsCard}>
+                <Text style={styles.sectionTitle}>Room controls</Text>
+                <View style={styles.actionsGrid}>
+                  {isHost && isWaiting && !lkRoom.connecting ? (
+                    <VButton
+                      label="Start debate"
+                      variant="primary"
+                      onPress={() => { void handleStartRoom() }}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+
+                  {!isHost && isLive && !lkRoom.connected && !lkRoom.connecting ? (
+                    <>
+                      <VButton
+                        label="Speak"
+                        variant="pro"
+                        onPress={() => { void handleConnect('speaker') }}
+                        style={styles.actionButton}
+                      />
+                      <VButton
+                        label="Listen"
+                        variant="ghost"
+                        onPress={() => { void handleConnect('audience') }}
+                        style={styles.actionButton}
+                      />
+                    </>
+                  ) : null}
+
+                  {lkRoom.connecting ? (
+                    <View style={styles.connectingState}>
+                      <ActivityIndicator size="small" color={theme.color.ink} />
+                      <Text style={styles.connectingText}>Connecting…</Text>
+                    </View>
+                  ) : null}
+
+                  {lkRoom.connected && isSpeaker && !lkRoom.connecting ? (
+                    <VButton
+                      label={lkRoom.isMuted ? 'Unmute' : 'Mute'}
+                      variant={lkRoom.isMuted ? 'primary' : 'ghost'}
+                      onPress={() => { void lkRoom.toggleMute() }}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+
+                  {lkRoom.connected && !lkRoom.connecting ? (
+                    <VButton
+                      label="Leave audio"
+                      variant="ghost"
+                      onPress={() => { void handleDisconnect() }}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+
+                  {isHost && !isEnded && !lkRoom.connecting ? (
+                    <VButton
+                      label="End debate"
+                      variant="con"
+                      onPress={handleEndRoom}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+                </View>
+              </View>
+
+              <Text style={styles.chatLabel}>CHAT</Text>
             </View>
-          }
+          )}
+          ListEmptyComponent={(
+            <View style={styles.emptyChat}>
+              <Text style={styles.emptyChatText}>No messages yet. Start the conversation.</Text>
+            </View>
+          )}
         />
 
-        {/* ── Message input ───────────────────────────────────────────────── */}
-        {!isEnded && (
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              value={messageText}
-              onChangeText={setMessageText}
-              placeholder="Type a message…"
-              placeholderTextColor="#6b7280"
-              returnKeyType="send"
-              onSubmitEditing={handleSendMessage}
-              editable={!sending}
-              blurOnSubmit={false}
-            />
-            <Pressable
-              style={[styles.sendButton, (!messageText.trim() || sending) && styles.sendButtonDisabled]}
-              onPress={handleSendMessage}
-              disabled={!messageText.trim() || sending}
-            >
-              {sending
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.sendButtonText}>Send</Text>
-              }
-            </Pressable>
-          </View>
-        )}
-
-        {/* ── Footer controls ─────────────────────────────────────────────── */}
-        <View style={styles.footer}>
-
-          {/* Host: start the debate (also connects host as speaker) */}
-          {isHost && isWaiting && !lkRoom.connecting && (
-            <Pressable
-              style={[styles.actionButton, styles.startButton]}
-              onPress={handleStartRoom}
-            >
-              <Text style={styles.actionButtonText}>🎙 Start debate</Text>
-            </Pressable>
-          )}
-
-          {/* Connecting spinner */}
-          {lkRoom.connecting && (
-            <View style={[styles.actionButton, styles.connectingButton]}>
-              <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.actionButtonText}> Connecting…</Text>
+        {!isEnded ? (
+          <View style={styles.bottomPanel}>
+            <View style={styles.voteBar}>
+              <VButton
+                label={userVote === 'against' ? '✗ AGAINSTED' : '✗ AGAINST'}
+                variant="con"
+                onPress={() => { void vote('against') }}
+                style={styles.voteButton}
+              />
+              <VButton
+                label={userVote === 'for' ? '✓ FOR IT' : '✓ FOR'}
+                variant="pro"
+                onPress={() => { void vote('for') }}
+                style={styles.voteButton}
+              />
             </View>
-          )}
 
-          {/* Non-host, live room, not connected: offer speaker or listener */}
-          {!isHost && isLive && !lkRoom.connected && !lkRoom.connecting && (
-            <>
-              <Pressable
-                style={[styles.actionButton, styles.speakButton]}
-                onPress={() => { void handleConnect('speaker') }}
-              >
-                <Text style={styles.actionButtonText}>🎤 Speak</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.actionButton, styles.listenButton]}
-                onPress={() => { void handleConnect('audience') }}
-              >
-                <Text style={styles.actionButtonText}>👂 Listen</Text>
-              </Pressable>
-            </>
-          )}
-
-          {/* Mute / unmute — speakers only */}
-          {lkRoom.connected && isSpeaker && !lkRoom.connecting && (
-            <Pressable
-              style={[styles.actionButton, lkRoom.isMuted ? styles.unmuteButton : styles.muteButton]}
-              onPress={() => { void lkRoom.toggleMute() }}
-            >
-              <Text style={styles.actionButtonText}>
-                {lkRoom.isMuted ? '🔇 Unmute' : '🎙 Mute'}
-              </Text>
-            </Pressable>
-          )}
-
-          {/* Leave audio — any connected user */}
-          {lkRoom.connected && !lkRoom.connecting && (
-            <Pressable
-              style={[styles.actionButton, styles.leaveButton]}
-              onPress={() => { void handleDisconnect() }}
-            >
-              <Text style={styles.actionButtonText}>Leave audio</Text>
-            </Pressable>
-          )}
-
-          {/* Host: end the debate */}
-          {isHost && !isEnded && !lkRoom.connecting && (
-            <Pressable style={[styles.actionButton, styles.endButton]} onPress={handleEndRoom}>
-              <Text style={styles.actionButtonText}>End debate</Text>
-            </Pressable>
-          )}
-        </View>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={styles.input}
+                value={messageText}
+                onChangeText={setMessageText}
+                placeholder="Type a message…"
+                placeholderTextColor={theme.color.dim}
+                returnKeyType="send"
+                onSubmitEditing={() => { void handleSendMessage() }}
+                editable={!sending}
+                blurOnSubmit={false}
+              />
+              <VButton
+                label={sending ? '…' : 'Send'}
+                variant="primary"
+                size="sm"
+                onPress={() => { void handleSendMessage() }}
+                disabled={!messageText.trim() || sending}
+              />
+            </View>
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
@@ -563,7 +564,7 @@ export default function RoomScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#111827',
+    backgroundColor: theme.color.bg,
   },
   flex: {
     flex: 1,
@@ -572,311 +573,233 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111827',
-    padding: 20,
-    gap: 16,
+    backgroundColor: theme.color.bg,
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.lg,
   },
-
-  // Header
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
-  },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  topBarButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: '#1f2937',
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-  topBarButtonText: {
-    color: '#d1d5db',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  topBarSpacer: {
-    width: 72,
-  },
-  questionBadge: {
-    backgroundColor: '#1f2937',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#374151',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-    gap: 4,
-  },
-  questionBadgeTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  questionBadgeLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#9ca3af',
-    letterSpacing: 0.8,
-  },
-  questionBadgeAction: {
-    color: '#818cf8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  questionBadgeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#f9fafb',
-    lineHeight: 20,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 4,
-  },
-  title: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#f9fafb',
-  },
-  statusBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    flexShrink: 0,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#fff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  topic: {
-    fontSize: 13,
-    color: '#9ca3af',
-    lineHeight: 18,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
-  },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1f2937',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#374151',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  metaChipLabel: {
-    color: '#9ca3af',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  metaChipValue: {
-    color: '#f9fafb',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  hostChip: {
-    backgroundColor: '#312e81',
-    borderColor: '#4f46e5',
-  },
-  connectionCard: {
-    marginTop: 10,
-    backgroundColor: '#0f172a',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 2,
-  },
-  connectionLabel: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  connectionValue: {
-    color: '#f8fafc',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  // Speaker strip
-  speakerStrip: {
-    minHeight: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
-    justifyContent: 'center',
-  },
-  speakerScroll: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 0,
-  },
-  noSpeakersText: {
-    color: '#6b7280',
-    fontSize: 13,
+  errorText: {
+    ...textStyles.body,
     textAlign: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    color: theme.color.ink,
   },
-
-  // Voting
-  votingSection: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
-  },
-  voteButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-  },
-  voteBtn: {
-    flex: 1,
-    maxWidth: 120,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  voteBtnActive: {
-    opacity: 0.5,
-  },
-  againstBtn: {
-    backgroundColor: '#ef4444',
-  },
-  forBtn: {
-    backgroundColor: '#22c55e',
-  },
-  voteBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-
-  // Chat
   messageList: {
     flex: 1,
   },
   messageListContent: {
-    paddingVertical: 10,
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing['2xl'],
   },
-  emptyChat: {
-    padding: 24,
+  headerContent: {
+    gap: theme.spacing.lg,
+    paddingBottom: theme.spacing['2xl'],
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm,
+  },
+  topBarCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    flex: 1,
+  },
+  topBarSpacer: {
+    width: 88,
+  },
+  motionCard: {
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    gap: theme.spacing.md,
+  },
+  motionTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+  },
+  motionLabel: {
+    ...textStyles.label,
+    color: theme.color.pro,
+  },
+  reportLink: {
+    fontFamily: theme.font.monoBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.4,
+    color: theme.color.con,
+    textTransform: 'uppercase',
+  },
+  motionTitle: {
+    ...textStyles.displayMD,
+  },
+  motionTopic: {
+    ...textStyles.bodySM,
+  },
+  metaPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  connectionCard: {
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.color.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.xs,
+  },
+  connectionLabel: {
+    ...textStyles.label,
+    color: theme.color.dim,
+  },
+  connectionValue: {
+    ...textStyles.bodySemibold,
+  },
+  speakersCard: {
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    gap: theme.spacing.md,
+  },
+  sectionTitle: {
+    ...textStyles.titleLG,
+  },
+  speakerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.lg,
+  },
+  speakerPressable: {
     alignItems: 'center',
   },
+  emptySpeakers: {
+    ...textStyles.bodySM,
+  },
+  meterCard: {
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.lg,
+  },
+  actionsCard: {
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    gap: theme.spacing.md,
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+  },
+  actionButton: {
+    minWidth: 148,
+  },
+  connectingState: {
+    minHeight: 54,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    backgroundColor: theme.color.surfaceAlt,
+    paddingHorizontal: theme.spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  connectingText: {
+    fontFamily: theme.font.displayBold,
+    fontSize: 15,
+    lineHeight: 18,
+    color: theme.color.ink,
+  },
+  chatLabel: {
+    ...textStyles.label,
+    color: theme.color.dim,
+  },
+  messageCard: {
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.xs,
+  },
+  messageMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
+  },
+  messageMetaRowOwn: {
+    justifyContent: 'flex-end',
+  },
+  messageHandle: {
+    fontFamily: theme.font.monoBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    color: theme.color.dim,
+    textTransform: 'uppercase',
+  },
+  messageTime: {
+    fontFamily: theme.font.monoMedium,
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    color: theme.color.dim,
+    textTransform: 'uppercase',
+  },
+  emptyChat: {
+    paddingVertical: theme.spacing.xl,
+  },
   emptyChatText: {
-    color: '#6b7280',
-    fontSize: 14,
+    ...textStyles.bodySM,
     textAlign: 'center',
   },
-
-  // Input
+  bottomPanel: {
+    borderTopWidth: 1,
+    borderTopColor: theme.color.line,
+    backgroundColor: theme.color.bg,
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  voteBar: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+  },
+  voteButton: {
+    flex: 1,
+  },
   inputRow: {
     flexDirection: 'row',
-    padding: 8,
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1f2937',
+    alignItems: 'flex-end',
+    gap: theme.spacing.md,
   },
   input: {
     flex: 1,
-    backgroundColor: '#1f2937',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: '#f9fafb',
-    fontSize: 14,
+    minHeight: 52,
+    maxHeight: 116,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
-    borderColor: '#374151',
-  },
-  sendButton: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 60,
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-
-  // Footer
-  footer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    minWidth: 100,
-    flexDirection: 'row',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  startButton:      { backgroundColor: '#22c55e' },
-  speakButton:      { backgroundColor: '#4f46e5' },
-  listenButton:     { backgroundColor: '#374151' },
-  muteButton:       { backgroundColor: '#374151' },
-  unmuteButton:     { backgroundColor: '#f59e0b' },
-  leaveButton:      { backgroundColor: '#4b5563' },
-  endButton:        { backgroundColor: '#ef4444' },
-  connectingButton: { backgroundColor: '#374151' },
-
-  // Error state
-  errorText: {
-    color: '#fca5a5',
-    fontSize: 15,
-    textAlign: 'center',
-  },
-  retryButton: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  retryText: {
-    color: '#fff',
-    fontWeight: '600',
+    borderColor: theme.color.line,
+    backgroundColor: theme.color.surface,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    color: theme.color.ink,
+    fontFamily: theme.font.body,
+    fontSize: theme.type.body.size,
+    lineHeight: theme.type.body.lineHeight,
   },
 })

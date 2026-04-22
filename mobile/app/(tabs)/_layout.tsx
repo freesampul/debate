@@ -27,12 +27,14 @@ export default function TabsLayout(): React.ReactElement {
         name="index"
         options={{
           title: 'Rooms',
+          headerShown: false,
         }}
       />
       <Tabs.Screen
         name="questions"
         options={{
           title: 'Takes',
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -51,6 +53,7 @@ export default function TabsLayout(): React.ReactElement {
         name="profile"
         options={{
           title: 'Me',
+          headerShown: false,
         }}
       />
     </Tabs>
