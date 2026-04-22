@@ -1,6 +1,7 @@
 import React from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Room } from '@debate-app/shared'
+import { textStyles, theme } from '../theme/voltage'
 
 interface RoomCardProps {
   room: Room
@@ -8,9 +9,9 @@ interface RoomCardProps {
 }
 
 const STATUS_COLORS: Record<Room['status'], string> = {
-  waiting: '#f59e0b',
-  live: '#22c55e',
-  ended: '#6b7280',
+  waiting: theme.color.warn,
+  live: theme.color.live,
+  ended: theme.color.dim,
 }
 
 const STATUS_LABELS: Record<Room['status'], string> = {
@@ -42,52 +43,55 @@ export function RoomCard({ room, onPress }: RoomCardProps): React.ReactElement {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1f2937',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.lg,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.color.line,
   },
   cardPressed: {
-    opacity: 0.8,
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 8,
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
   },
   title: {
     flex: 1,
+    fontFamily: theme.font.displayBold,
     fontSize: 16,
-    fontWeight: '700',
-    color: '#f9fafb',
+    lineHeight: 20,
+    letterSpacing: -0.2,
+    color: theme.color.ink,
   },
   statusBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 8,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 10,
     paddingVertical: 3,
     flexShrink: 0,
   },
   statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#fff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    ...textStyles.tag,
+    color: theme.color.proInk,
   },
   topic: {
-    fontSize: 14,
-    color: '#9ca3af',
-    lineHeight: 20,
     marginBottom: 12,
+    ...textStyles.bodySM,
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   meta: {
-    fontSize: 12,
-    color: '#6b7280',
+    fontFamily: theme.font.monoMedium,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: theme.color.dim,
+    textTransform: 'uppercase',
   },
 })

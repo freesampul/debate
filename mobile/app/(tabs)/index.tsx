@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { RoomCard } from '../../components/RoomCard'
 import { listRooms } from '../../lib/api'
 import type { Room } from '@debate-app/shared'
+import { textStyles, theme } from '../../theme/voltage'
 
 export default function HomeScreen(): React.ReactElement {
   const [rooms, setRooms] = useState<Room[]>([])
@@ -43,7 +44,7 @@ export default function HomeScreen(): React.ReactElement {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        <ActivityIndicator size="large" color={theme.color.pro} />
       </View>
     )
   }
@@ -69,7 +70,7 @@ export default function HomeScreen(): React.ReactElement {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="#4f46e5"
+            tintColor={theme.color.pro}
           />
         }
         ListEmptyComponent={
@@ -86,41 +87,38 @@ export default function HomeScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#111827',
+    backgroundColor: theme.color.bg,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111827',
+    backgroundColor: theme.color.bg,
   },
   errorBanner: {
-    backgroundColor: '#7f1d1d',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: theme.color.dangerSurface,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
   },
   errorText: {
-    color: '#fca5a5',
-    fontSize: 14,
+    ...textStyles.bodySM,
+    color: theme.color.con,
   },
   list: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 24,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing['2xl'],
   },
   empty: {
     alignItems: 'center',
     paddingTop: 80,
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#f9fafb',
+    ...textStyles.titleLG,
   },
   emptyBody: {
-    fontSize: 14,
-    color: '#9ca3af',
     textAlign: 'center',
+    ...textStyles.bodySM,
   },
 })

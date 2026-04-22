@@ -1,6 +1,7 @@
 import React from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { Message } from '@debate-app/shared'
+import { textStyles, theme } from '../theme/voltage'
 
 interface ChatMessageProps {
   message: Message
@@ -46,42 +47,44 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: '75%',
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
     padding: 10,
+    borderWidth: 1,
   },
   bubbleOther: {
-    backgroundColor: '#1f2937',
+    backgroundColor: theme.color.surface,
+    borderColor: theme.color.line,
     borderBottomLeftRadius: 4,
   },
   bubbleOwn: {
-    backgroundColor: '#4f46e5',
+    backgroundColor: theme.color.pro,
+    borderColor: theme.color.pro,
     borderBottomRightRadius: 4,
   },
   userId: {
-    fontSize: 11,
-    color: '#9ca3af',
+    ...textStyles.tag,
     marginBottom: 2,
-    fontWeight: '600',
+    color: theme.color.muted,
   },
   content: {
-    fontSize: 14,
-    color: '#f9fafb',
-    lineHeight: 19,
+    ...textStyles.bodySM,
+    color: theme.color.ink,
   },
   contentOwn: {
-    color: '#fff',
+    color: theme.color.proInk,
   },
   contentRemoved: {
     fontStyle: 'italic',
     opacity: 0.8,
   },
   time: {
-    fontSize: 10,
-    color: '#6b7280',
     marginTop: 4,
     alignSelf: 'flex-end',
+    fontFamily: theme.font.mono,
+    fontSize: 10,
+    color: theme.color.dim,
   },
   timeOwn: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.72)',
   },
 })
