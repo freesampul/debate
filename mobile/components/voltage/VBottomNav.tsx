@@ -143,7 +143,6 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
   },
   inactive: {
-    color: theme.color.dim,
-    opacity: 0.5,
+    opacity: 0.4,
   },
 })
