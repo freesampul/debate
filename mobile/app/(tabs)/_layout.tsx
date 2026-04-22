@@ -1,62 +1,56 @@
 import React from 'react'
-import { Tabs } from 'expo-router'
-import { StyleSheet, Text } from 'react-native'
+import { Link, Tabs } from 'expo-router'
+import { Pressable, StyleSheet, Text } from 'react-native'
+import { VBottomNav } from '../../components/voltage'
 import { textStyles, theme } from '../../theme/voltage'
-
-function TabIcon({ symbol, focused }: { symbol: string; focused: boolean }): React.ReactElement {
-  return (
-    <Text
-      style={[
-        styles.tabIcon,
-        { opacity: focused ? 1 : 0.5 },
-      ]}
-    >
-      {symbol}
-    </Text>
-  )
-}
 
 export default function TabsLayout(): React.ReactElement {
   return (
     <Tabs
+      tabBar={(props) => <VBottomNav {...props} />}
       screenOptions={{
         sceneStyle: styles.scene,
         headerStyle: styles.header,
         headerShadowVisible: false,
         headerTintColor: theme.color.ink,
         headerTitleStyle: styles.headerTitle,
-        tabBarStyle: styles.tabBar,
-        tabBarLabelStyle: styles.tabLabel,
-        tabBarActiveTintColor: theme.color.ink,
-        tabBarInactiveTintColor: theme.color.dim,
+        headerRight: () => (__DEV__ ? (
+          <Link href="/components" asChild>
+            <Pressable style={styles.devButton}>
+              <Text style={styles.devButtonText}>DEV</Text>
+            </Pressable>
+          </Link>
+        ) : null),
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Rooms',
-          tabBarIcon: ({ focused }) => <TabIcon symbol="🎙️" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="questions"
         options={{
-          title: 'Questions',
-          tabBarIcon: ({ focused }) => <TabIcon symbol="💬" focused={focused} />,
+          title: 'Takes',
         }}
       />
       <Tabs.Screen
         name="create"
         options={{
           title: 'Create',
-          tabBarIcon: ({ focused }) => <TabIcon symbol="➕" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          title: 'Inbox',
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused }) => <TabIcon symbol="👤" focused={focused} />,
+          title: 'Me',
         }}
       />
     </Tabs>
@@ -73,20 +67,21 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...textStyles.titleLG,
   },
-  tabBar: {
+  devButton: {
+    minHeight: 28,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: theme.color.line,
     backgroundColor: theme.color.surface,
-    borderTopColor: theme.color.line,
-    height: 74,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  tabLabel: {
+  devButtonText: {
     fontFamily: theme.font.monoBold,
     fontSize: theme.type.tag.size,
     letterSpacing: theme.type.tag.letterSpacing,
     textTransform: 'uppercase',
-  },
-  tabIcon: {
-    fontSize: 22,
+    color: theme.color.ink,
   },
 })
