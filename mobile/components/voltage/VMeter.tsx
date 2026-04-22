@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native'
 import type { LayoutChangeEvent } from 'react-native'
 import { theme } from '../../theme/voltage'
@@ -25,10 +25,10 @@ export function VMeter({
   const safeForPct = clampPercent(forPct)
   const againstPct = 100 - safeForPct
   const animatedFor = useRef(new Animated.Value(safeForPct)).current
-  const containerWidth = useRef(224)
+  const [containerWidth, setContainerWidth] = useState(0)
   const handleLayout = (e: LayoutChangeEvent): void => {
     const w = e.nativeEvent.layout.width
-    if (w > 0) containerWidth.current = w
+    if (w > 0 && w !== containerWidth) setContainerWidth(w)
   }
 
   useEffect(() => {
@@ -42,12 +42,12 @@ export function VMeter({
 
   const forDimension = animatedFor.interpolate({
     inputRange: [0, 100],
-    outputRange: orientation === 'h' ? [0, containerWidth.current] : [0, VERTICAL_HEIGHT],
+    outputRange: orientation === 'h' ? [0, containerWidth] : [0, VERTICAL_HEIGHT],
   })
 
   const againstDimension = animatedFor.interpolate({
     inputRange: [0, 100],
-    outputRange: orientation === 'h' ? [containerWidth.current, 0] : [VERTICAL_HEIGHT, 0],
+    outputRange: orientation === 'h' ? [containerWidth, 0] : [VERTICAL_HEIGHT, 0],
   })
 
   const voteLabel = useMemo(() => {
@@ -74,8 +74,12 @@ export function VMeter({
         <Text style={[styles.percentLabel, styles.conLabel]}>{againstPct}% AGAINST</Text>
       </View>
       <View style={styles.horizontalMeter} onLayout={handleLayout}>
-        <Animated.View style={[styles.horizontalFor, { width: forDimension }]} />
-        <Animated.View style={[styles.horizontalAgainst, { width: againstDimension }]} />
+        {containerWidth > 0 ? (
+          <>
+            <Animated.View style={[styles.horizontalFor, { width: forDimension }]} />
+            <Animated.View style={[styles.horizontalAgainst, { width: againstDimension }]} />
+          </>
+        ) : null}
       </View>
     </View>
   )
