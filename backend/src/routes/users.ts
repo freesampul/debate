@@ -7,11 +7,21 @@ import type { UserProfile } from '../types'
 
 const router = Router()
 
+const avatarUrlSchema = z.string().refine((value) => {
+  if (value.startsWith('data:image/')) return true
+  try {
+    new URL(value)
+    return true
+  } catch {
+    return false
+  }
+}, 'Invalid avatar URL')
+
 const updateProfileSchema = z.object({
   username: z.string().min(3).max(30).trim().regex(/^[a-zA-Z0-9_]+$/),
   display_name: z.string().min(1).max(50).trim().nullable().optional(),
   bio: z.string().max(280).trim().nullable().optional(),
-  avatar_url: z.string().url().nullable().optional(),
+  avatar_url: avatarUrlSchema.nullable().optional(),
 })
 
 async function getUserIdentity(userId: string): Promise<{

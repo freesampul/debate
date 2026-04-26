@@ -15,5 +15,5 @@ export default function IndexScreen(): React.ReactElement {
     )
   }
 
-  return <Redirect href={session ? '/' : '/login'} />
+  return <Redirect href={session ? '/(tabs)' : '/login'} />
 }

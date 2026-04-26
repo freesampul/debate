@@ -7,6 +7,21 @@ import type { Question, Room } from '../types'
 
 const router = Router()
 
+async function getUserIdentity(userId: string): Promise<{
+  id: string
+  username: string
+  display_name: string | null
+} | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, username, display_name')
+    .eq('id', userId)
+    .single()
+
+  if (error || !data) return null
+  return data
+}
+
 async function getQuestionContentMap(questionIds: Array<string | null>): Promise<Map<string, string>> {
   const ids = Array.from(new Set(questionIds.filter((id): id is string => Boolean(id))))
   if (ids.length === 0) return new Map()
@@ -17,6 +32,33 @@ async function getQuestionContentMap(questionIds: Array<string | null>): Promise
     .in('id', ids)
 
   return new Map((data ?? []).map((question) => [question.id, question.content]))
+}
+
+async function notifyFollowersOfQuestion(userId: string, question: Question): Promise<void> {
+  const { data: followers } = await supabase
+    .from('follows')
+    .select('follower_id')
+    .eq('following_id', userId)
+
+  if (!followers || followers.length === 0) return
+
+  const actor = await getUserIdentity(userId)
+
+  await supabase.from('notifications').insert(
+    followers
+      .filter((row) => row.follower_id !== userId)
+      .map((row) => ({
+        user_id: row.follower_id,
+        type: 'question_posted' as const,
+        data: {
+          question_id: question.id,
+          question_content: question.content,
+          actor_user_id: userId,
+          actor_username: actor?.username ?? null,
+          actor_display_name: actor?.display_name ?? null,
+        },
+      })),
+  )
 }
 
 const createQuestionSchema = z.object({
@@ -162,6 +204,8 @@ router.post(
       res.status(500).json({ error: 'Internal server error' })
       return
     }
+
+    await notifyFollowersOfQuestion(userId, data as Question)
 
     res.status(201).json({ question: data as Question })
   }

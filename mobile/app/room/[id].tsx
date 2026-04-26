@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import type { Message, RoomParticipantWithUser } from '@debate-app/shared'
+import type { Message, RoomParticipantWithUser, SpeakerInviteWithUser } from '@debate-app/shared'
 import { VButton, VChatBubble, VLiveBadge, VMeter, VPill, VSpeakerTile } from '../../components/voltage'
 import { useAuth } from '../../hooks/useAuth'
 import { useLiveKitRoom } from '../../hooks/useLiveKitRoom'
@@ -21,8 +21,13 @@ import { useParticipants } from '../../hooks/useParticipants'
 import { useRoom } from '../../hooks/useRoom'
 import { useVotes } from '../../hooks/useVotes'
 import {
+  acceptInvite,
+  declineInvite,
+  joinRoom as joinRoomParticipation,
   banParticipant,
   endRoom,
+  getInvites,
+  inviteSpeaker,
   removeMessage,
   removeParticipant,
   reportMessage,
@@ -69,7 +74,11 @@ export default function RoomScreen(): React.ReactElement {
 
   const [messageText, setMessageText] = useState('')
   const [sending, setSending] = useState(false)
+  const [joiningAudience, setJoiningAudience] = useState(false)
+  const [invites, setInvites] = useState<SpeakerInviteWithUser[]>([])
+  const [loadingInvites, setLoadingInvites] = useState(false)
   const flatListRef = useRef<FlatList<Message>>(null)
+  const autoJoinedAudienceRef = useRef(false)
 
   const isHost = room?.host_id === userId
   const isLive = room?.status === 'live'
@@ -85,38 +94,122 @@ export default function RoomScreen(): React.ReactElement {
   const participantCount = participants.length
   const speakerCount = dbSpeakers.length
   const listenerCount = Math.max(0, participantCount - speakerCount)
+  const audienceParticipants = useMemo(
+    () => participants.filter((participant) => participant.role === 'audience'),
+    [participants],
+  )
+  const myInvite = useMemo(
+    () => invites.find((invite) => invite.invited_user_id === userId) ?? null,
+    [invites, userId],
+  )
   const forPct = counts.total > 0 ? Math.round((counts.for / counts.total) * 100) : 50
+  const roomTitle = room?.question_content ?? room?.title ?? ''
+  const roomTopic = room?.topic?.trim() ?? ''
+  const roomSecondaryText = roomTopic && roomTopic !== roomTitle.trim() ? roomTopic : null
   const connectionLabel = lkRoom.connecting
     ? 'Connecting to audio'
     : lkRoom.connected
       ? (isSpeaker ? (lkRoom.isMuted ? 'Connected as speaker (muted)' : 'Connected as speaker') : 'Connected as listener')
       : (isHost && isWaiting ? 'Host controls ready' : 'Not connected to audio')
+  const audioHint = joiningAudience
+    ? 'Joining room so chat and listen controls work…'
+    : loadingInvites
+      ? 'Syncing speaker invites…'
+      : !isLive && !isHost
+        ? 'Waiting on the host to start the room before listeners can join audio.'
+        : myInvite?.status === 'pending'
+          ? 'You have a pending speaker invite.'
+          : myInvite?.status === 'accepted'
+            ? 'Your invite was accepted. You can join the mic when ready.'
+            : null
+  const showAudioStatus = lkRoom.connecting
+    || lkRoom.connected
+    || Boolean(audioHint)
+
+  useEffect(() => {
+    if (!room || !userId || !isLive || isHost || autoJoinedAudienceRef.current) return
+
+    const alreadyJoined = participants.some((participant) => participant.user_id === userId)
+    if (alreadyJoined) {
+      autoJoinedAudienceRef.current = true
+      return
+    }
+
+    setJoiningAudience(true)
+    joinRoomParticipation(id, 'audience')
+      .then(() => {
+        autoJoinedAudienceRef.current = true
+      })
+      .catch((err: unknown) => {
+        console.error('[room] Auto-join audience failed:', err)
+      })
+      .finally(() => {
+        setJoiningAudience(false)
+      })
+  }, [id, isHost, isLive, participants, room, userId])
+
+  const refreshInvites = useCallback(async (): Promise<void> => {
+    if (!room || isEnded) {
+      setInvites([])
+      return
+    }
+
+    setLoadingInvites(true)
+    try {
+      setInvites(await getInvites(id))
+    } catch (err) {
+      console.error('[room] Failed to load invites:', err)
+    } finally {
+      setLoadingInvites(false)
+    }
+  }, [id, isEnded, room])
+
+  useEffect(() => {
+    void refreshInvites()
+  }, [refreshInvites])
+
+  const ensureHostParticipation = useCallback(async (): Promise<void> => {
+    if (!isHost || !userId) return
+
+    const alreadyJoined = participants.some((participant) => participant.user_id === userId)
+    if (alreadyJoined) return
+
+    await joinRoomParticipation(id, 'speaker')
+    await refresh()
+  }, [id, isHost, participants, refresh, userId])
 
   const handleSendMessage = useCallback(async (): Promise<void> => {
     const text = messageText.trim()
-    if (!text || !userId) return
+    if (!text) return
+    if (!userId) {
+      Alert.alert('Sign in required', 'You need to be signed in to send messages.')
+      return
+    }
+    if (!isLive) {
+      Alert.alert('Room not live', 'Chat opens once the debate is live.')
+      return
+    }
     setSending(true)
     try {
+      await ensureHostParticipation()
       await sendMessage(id, text)
       setMessageText('')
-    } catch {
-      Alert.alert('Error', 'Failed to send message.')
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to send message.')
     } finally {
       setSending(false)
     }
-  }, [id, messageText, userId])
+  }, [ensureHostParticipation, id, isLive, messageText, userId])
 
   const handleStartRoom = useCallback(async (): Promise<void> => {
     try {
-      if (!lkRoom.connected) {
-        await lkRoom.connect('speaker')
-      }
+      await ensureHostParticipation()
       await startRoom(id)
       await refresh()
     } catch (err) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to start room.')
     }
-  }, [id, lkRoom, refresh])
+  }, [ensureHostParticipation, id, refresh])
 
   const handleConnect = useCallback(async (role: 'speaker' | 'audience'): Promise<void> => {
     try {
@@ -135,8 +228,16 @@ export default function RoomScreen(): React.ReactElement {
   }, [lkRoom])
 
   const handleBackPress = useCallback((): void => {
+    const goBack = (): void => {
+      if (router.canGoBack()) {
+        router.back()
+      } else {
+        router.replace('/(tabs)')
+      }
+    }
+
     if (!lkRoom.connected) {
-      router.back()
+      goBack()
       return
     }
 
@@ -155,7 +256,7 @@ export default function RoomScreen(): React.ReactElement {
               Alert.alert('Error', err instanceof Error ? err.message : 'Failed to leave audio.')
               return
             }
-            router.back()
+            goBack()
           },
         },
       ],
@@ -247,35 +348,86 @@ export default function RoomScreen(): React.ReactElement {
       return
     }
 
+    const existingInvite = invites.find((invite) => invite.invited_user_id === participant.user_id)
+    const actions: Array<{ text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }> = [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove from room',
+        onPress: async () => {
+          try {
+            await removeParticipant(id, participant.user_id, 'host_removed')
+          } catch {
+            Alert.alert('Error', 'Failed to remove this participant.')
+          }
+        },
+      },
+      {
+        text: 'Ban from room',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await banParticipant(id, participant.user_id, 'host_banned')
+          } catch {
+            Alert.alert('Error', 'Failed to ban this participant.')
+          }
+        },
+      },
+    ]
+
+    if (participant.role === 'audience' && !existingInvite) {
+      actions.unshift({
+        text: 'Invite to speak',
+        onPress: async () => {
+          try {
+            await inviteSpeaker(id, participant.user_id)
+            await refreshInvites()
+            Alert.alert('Invite sent', `@${participant.username} can now accept the speaker invite.`)
+          } catch (err) {
+            Alert.alert('Error', err instanceof Error ? err.message : 'Failed to invite this listener.')
+          }
+        },
+      })
+    }
+
     Alert.alert(
       participant.username,
-      'Choose a moderation action.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove from room',
-          onPress: async () => {
-            try {
-              await removeParticipant(id, participant.user_id, 'host_removed')
-            } catch {
-              Alert.alert('Error', 'Failed to remove this participant.')
-            }
-          },
-        },
-        {
-          text: 'Ban from room',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await banParticipant(id, participant.user_id, 'host_banned')
-            } catch {
-              Alert.alert('Error', 'Failed to ban this participant.')
-            }
-          },
-        },
-      ],
+      existingInvite?.status === 'accepted'
+        ? 'Invite accepted. They can join the mic now.'
+        : existingInvite?.status === 'pending'
+          ? 'Invite pending. They can accept it from Inbox or this room.'
+          : 'Choose a room action.',
+      actions,
     )
-  }, [id, isHost, router, userId])
+  }, [id, invites, isHost, refreshInvites, router, userId])
+
+  const handleInviteDecision = useCallback(async (action: 'accept' | 'decline'): Promise<void> => {
+    if (!myInvite) return
+
+    try {
+      if (action === 'accept') {
+        await acceptInvite(id, myInvite.id)
+      } else {
+        await declineInvite(id, myInvite.id)
+      }
+      await refreshInvites()
+      await refresh()
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : `Failed to ${action} invite.`)
+    }
+  }, [id, myInvite, refresh, refreshInvites])
+
+  const handleVotePress = useCallback(async (side: 'for' | 'against'): Promise<void> => {
+    if (!isLive) {
+      Alert.alert('Room not live', 'Voting opens when the debate goes live.')
+      return
+    }
+
+    try {
+      await vote(side)
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to cast vote.')
+    }
+  }, [isLive, vote])
 
   const renderMessage = useCallback(({ item }: { item: Message }): React.ReactElement => {
     const isOwn = item.user_id === userId
@@ -374,21 +526,24 @@ export default function RoomScreen(): React.ReactElement {
           ListHeaderComponent={(
             <View style={styles.headerContent}>
               <View style={styles.topBar}>
-                <VButton label="Back" variant="ghost" size="sm" onPress={handleBackPress} />
-                <View style={styles.topBarCenter}>
+                <View style={styles.topActionsRow}>
+                  <VButton label="Back" variant="ghost" size="sm" onPress={handleBackPress} />
+                  {room.question_id ? (
+                    <VButton
+                      label="Question"
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => router.push(`/question/${room.question_id}`)}
+                    />
+                  ) : (
+                    <View style={styles.topBarSpacer} />
+                  )}
+                </View>
+                <View style={styles.topStatusRow}>
                   {statusPill(room.status)}
                   <VPill label={`${listenerCount} LISTENERS`} />
+                  <VPill label={`${speakerCount} SPEAKERS`} />
                 </View>
-                {room.question_id ? (
-                  <VButton
-                    label="Question"
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => router.push(`/question/${room.question_id}`)}
-                  />
-                ) : (
-                  <View style={styles.topBarSpacer} />
-                )}
               </View>
 
               <View style={styles.motionCard}>
@@ -401,11 +556,13 @@ export default function RoomScreen(): React.ReactElement {
                   ) : null}
                 </View>
                 <Text style={styles.motionTitle} numberOfLines={3}>
-                  {room.question_content ?? room.title}
+                  {roomTitle}
                 </Text>
-                <Text style={styles.motionTopic} numberOfLines={3}>
-                  {room.topic}
-                </Text>
+                {roomSecondaryText ? (
+                  <Text style={styles.motionTopic} numberOfLines={3}>
+                    {roomSecondaryText}
+                  </Text>
+                ) : null}
                 <View style={styles.metaPills}>
                   <VPill label={`${speakerCount} SPEAKERS`} />
                   <VPill label={`${listenerCount} AUDIENCE`} />
@@ -420,11 +577,6 @@ export default function RoomScreen(): React.ReactElement {
                 </View>
               </View>
 
-              <View style={styles.connectionCard}>
-                <Text style={styles.connectionLabel}>AUDIO STATUS</Text>
-                <Text style={styles.connectionValue}>{connectionLabel}</Text>
-              </View>
-
               <View style={styles.speakersCard}>
                 <Text style={styles.sectionTitle}>Speakers</Text>
                 {speakerElements.length > 0 ? (
@@ -435,6 +587,36 @@ export default function RoomScreen(): React.ReactElement {
                   </Text>
                 )}
               </View>
+
+              {audienceParticipants.length > 0 ? (
+                <View style={styles.speakersCard}>
+                  <View style={styles.audienceHeader}>
+                    <Text style={styles.sectionTitle}>Audience</Text>
+                    <VPill label={`${audienceParticipants.length} LISTENERS`} />
+                  </View>
+                  <View style={styles.audienceList}>
+                    {audienceParticipants.map((participant) => {
+                      const inviteState = invites.find((invite) => invite.invited_user_id === participant.user_id)?.status
+                      return (
+                        <Pressable
+                          key={participant.user_id}
+                          onPress={() => handleParticipantPress(participant)}
+                          style={styles.audienceRow}
+                        >
+                          <Text style={styles.audienceHandle}>@{participant.username}</Text>
+                          {inviteState === 'accepted' ? (
+                            <VPill label="INVITED" bg={theme.color.pro} fg={theme.color.proInk} border={theme.color.pro} />
+                          ) : inviteState === 'pending' ? (
+                            <VPill label="PENDING INVITE" />
+                          ) : isHost ? (
+                            <VPill label="TAP FOR ACTIONS" />
+                          ) : null}
+                        </Pressable>
+                      )
+                    })}
+                  </View>
+                </View>
+              ) : null}
 
               {!isEnded ? (
                 <View style={styles.meterCard}>
@@ -454,16 +636,60 @@ export default function RoomScreen(): React.ReactElement {
                     />
                   ) : null}
 
-                  {!isHost && isLive && !lkRoom.connected && !lkRoom.connecting ? (
+                  {!isHost && myInvite?.status === 'pending' && !lkRoom.connected && !lkRoom.connecting ? (
                     <>
                       <VButton
-                        label="Speak"
+                        label="Accept invite"
+                        variant="pro"
+                        onPress={() => { void handleInviteDecision('accept') }}
+                        style={styles.actionButton}
+                      />
+                      <VButton
+                        label="Decline invite"
+                        variant="ghost"
+                        onPress={() => { void handleInviteDecision('decline') }}
+                        style={styles.actionButton}
+                      />
+                    </>
+                  ) : null}
+
+                  {!isHost && myInvite?.status === 'accepted' && !lkRoom.connected && !lkRoom.connecting ? (
+                    <>
+                      <VButton
+                        label="Join mic"
+                        variant="pro"
+                        onPress={() => { void handleConnect('speaker') }}
+                        style={styles.actionButton}
+                      />
+                      {isLive ? (
+                        <VButton
+                          label="Listen only"
+                          variant="ghost"
+                          onPress={() => { void handleConnect('audience') }}
+                          style={styles.actionButton}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {!isHost && !myInvite && isLive && !lkRoom.connected && !lkRoom.connecting ? (
+                    <VButton
+                      label="Listen"
+                      variant="ghost"
+                      onPress={() => { void handleConnect('audience') }}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+                  {isHost && isLive && !lkRoom.connected && !lkRoom.connecting ? (
+                    <>
+                      <VButton
+                        label="Join mic"
                         variant="pro"
                         onPress={() => { void handleConnect('speaker') }}
                         style={styles.actionButton}
                       />
                       <VButton
-                        label="Listen"
+                        label="Listen only"
                         variant="ghost"
                         onPress={() => { void handleConnect('audience') }}
                         style={styles.actionButton}
@@ -505,6 +731,22 @@ export default function RoomScreen(): React.ReactElement {
                     />
                   ) : null}
                 </View>
+                {showAudioStatus ? (
+                  <View style={styles.audioSummaryRow}>
+                    <VPill
+                      label={lkRoom.connected ? 'AUDIO ON' : lkRoom.connecting ? 'AUDIO CONNECTING' : 'AUDIO'}
+                      bg={lkRoom.connected ? theme.color.pro : theme.color.surfaceAlt}
+                      fg={lkRoom.connected ? theme.color.proInk : theme.color.dim}
+                      border={lkRoom.connected ? theme.color.pro : theme.color.line}
+                    />
+                    <View style={styles.audioSummaryCopy}>
+                      <Text style={styles.audioSummaryValue}>{connectionLabel}</Text>
+                      {audioHint ? (
+                        <Text style={styles.audioSummaryHint}>{audioHint}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ) : null}
               </View>
 
               <Text style={styles.chatLabel}>CHAT</Text>
@@ -517,19 +759,19 @@ export default function RoomScreen(): React.ReactElement {
           )}
         />
 
-        {!isEnded ? (
+        {isLive ? (
           <View style={styles.bottomPanel}>
             <View style={styles.voteBar}>
               <VButton
                 label={userVote === 'against' ? '✗ AGAINSTED' : '✗ AGAINST'}
                 variant="con"
-                onPress={() => { void vote('against') }}
+                onPress={() => { void handleVotePress('against') }}
                 style={styles.voteButton}
               />
               <VButton
                 label={userVote === 'for' ? '✓ FOR IT' : '✓ FOR'}
                 variant="pro"
-                onPress={() => { void vote('for') }}
+                onPress={() => { void handleVotePress('for') }}
                 style={styles.voteButton}
               />
             </View>
@@ -551,7 +793,7 @@ export default function RoomScreen(): React.ReactElement {
                 variant="primary"
                 size="sm"
                 onPress={() => { void handleSendMessage() }}
-                disabled={!messageText.trim() || sending}
+                disabled={!messageText.trim() || sending || joiningAudience}
               />
             </View>
           </View>
@@ -595,17 +837,19 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing['2xl'],
   },
   topBar: {
+    gap: theme.spacing.sm,
+  },
+  topActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: theme.spacing.sm,
   },
-  topBarCenter: {
+  topStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: theme.spacing.sm,
-    flex: 1,
   },
   topBarSpacer: {
     width: 88,
@@ -647,22 +891,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: theme.spacing.sm,
   },
-  connectionCard: {
-    borderRadius: theme.radius.lg,
-    backgroundColor: theme.color.surfaceAlt,
-    borderWidth: 1,
-    borderColor: theme.color.line,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    gap: theme.spacing.xs,
-  },
-  connectionLabel: {
-    ...textStyles.label,
-    color: theme.color.dim,
-  },
-  connectionValue: {
-    ...textStyles.bodySemibold,
-  },
   speakersCard: {
     borderRadius: theme.radius.xl,
     backgroundColor: theme.color.surface,
@@ -678,6 +906,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.lg,
+  },
+  audienceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+  },
+  audienceList: {
+    gap: theme.spacing.sm,
+  },
+  audienceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    backgroundColor: theme.color.surfaceAlt,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+  },
+  audienceHandle: {
+    ...textStyles.bodySemibold,
+    flex: 1,
   },
   speakerPressable: {
     alignItems: 'center',
@@ -705,6 +958,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.md,
+  },
+  audioSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.color.line,
+    paddingTop: theme.spacing.md,
+  },
+  audioSummaryCopy: {
+    flex: 1,
+    gap: theme.spacing.xs,
+  },
+  audioSummaryValue: {
+    ...textStyles.bodySemibold,
+  },
+  audioSummaryHint: {
+    ...textStyles.bodySM,
+    color: theme.color.muted,
   },
   actionButton: {
     minWidth: 148,

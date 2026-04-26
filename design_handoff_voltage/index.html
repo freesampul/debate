@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Debate · Design System · v0.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #0B0B0F; font-family: 'Inter', system-ui, sans-serif; color: #F5F5F7; }
+  * { box-sizing: border-box; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(0.85); }
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="systems.jsx"></script>
+<script type="text/babel" src="arena.jsx"></script>
+<script type="text/babel" src="arena-screens.jsx"></script>
+<script type="text/babel" src="oped.jsx"></script>
+<script type="text/babel" src="oped-screens.jsx"></script>
+<script type="text/babel" src="color-variants.jsx"></script>
+<script type="text/babel" src="naming.jsx"></script>
+<script type="text/babel" src="onboarding-auth.jsx"></script>
+
+<script type="text/babel">
+  const { DesignCanvas, DCSection, DCArtboard } = window;
+
+  function Intro() {
+    return (
+      <div style={{
+        width: 1040, padding: 56, background: '#0B0B0F', color: '#F5F5F7',
+        fontFamily: '"Inter", system-ui, sans-serif',
+      }}>
+        <div style={{ fontFamily: 'ui-monospace, "JetBrains Mono"', fontSize: 12, color: '#8E8EA0', letterSpacing: 3, marginBottom: 16 }}>
+          DESIGN SYSTEM · V0.1 · APRIL 2026
+        </div>
+        <div style={{ fontFamily: '"Instrument Serif", serif', fontSize: 140, lineHeight: 0.9, letterSpacing: -4, fontStyle: 'italic', marginBottom: 24 }}>
+          Two ways<br />to fight online.
+        </div>
+        <div style={{ fontSize: 18, color: '#A8A8B8', lineHeight: 1.5, maxWidth: 680, marginBottom: 40 }}>
+          Your debate app is a live-room product for Gen Z — competitive takes, voting, chat, follows.
+          Below are two complete design directions built on the same primitives (tokens, type, color,
+          core components, signature voting meter, and three key screens in iPhone frames).
+          Pick one, mix, or tell me what to push further.
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 40 }}>
+          <div style={{ padding: 28, background: '#15151C', borderRadius: 14, border: '1px solid #2A2A38' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#C6FF3D' }} />
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#FF2D87' }} />
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: '#6B4BFF' }} />
+            </div>
+            <div style={{ fontFamily: '"Space Grotesk"', fontSize: 36, fontWeight: 700, letterSpacing: -1, marginBottom: 8 }}>A · Arena</div>
+            <div style={{ fontSize: 14, color: '#A8A8B8', lineHeight: 1.5 }}>
+              Loud, competitive, trading-card energy. Hot pink vs acid lime. Space Grotesk display.
+              Copy reads like a group chat. Treats debate as spectator sport.
+            </div>
+          </div>
+          <div style={{ padding: 28, background: '#1D1814', borderRadius: 6, border: '1px solid #3A3028' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 2, background: '#E3B94F' }} />
+              <div style={{ width: 16, height: 16, borderRadius: 2, background: '#D94A3B' }} />
+              <div style={{ width: 16, height: 16, borderRadius: 2, background: '#F3EDE3' }} />
+            </div>
+            <div style={{ fontFamily: '"Instrument Serif"', fontSize: 46, fontStyle: 'italic', letterSpacing: -0.8, marginBottom: 8, color: '#F3EDE3' }}>B · Op-Ed</div>
+            <div style={{ fontSize: 14, color: '#A89C8C', lineHeight: 1.5 }}>
+              Warm editorial. Cream-on-near-black, terracotta vs gold. Instrument Serif headlines + Inter body.
+              Treats debate like a weekly magazine — opinionated, dignified, still contemporary.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ fontFamily: 'ui-monospace, "JetBrains Mono"', fontSize: 11, color: '#5A5A70', letterSpacing: 2, lineHeight: 1.8 }}>
+          SCROLL / DRAG THE CANVAS · PINCH TO ZOOM · DOUBLE-CLICK ANY CARD TO FOCUS
+        </div>
+      </div>
+    );
+  }
+
+  function App() {
+    return (
+      <DesignCanvas initialZoom={0.6}>
+        <DCSection id="intro" title="Intro">
+          <DCArtboard id="intro-card" label="Read me" width={1040} height={720}>
+            <Intro />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="arena" title="Direction A · Arena">
+          <DCArtboard id="a-tokens" label="Tokens" width={1040} height={1400}>
+            <ArenaTokens />
+          </DCArtboard>
+          <DCArtboard id="a-components" label="Components" width={1040} height={1500}>
+            <ArenaComponents />
+          </DCArtboard>
+          <DCArtboard id="a-rooms" label="Screen · Rooms" width={440} height={920}>
+            <ArenaRoomsScreen />
+          </DCArtboard>
+          <DCArtboard id="a-room" label="Screen · In Room" width={440} height={920}>
+            <ArenaRoomDetailScreen />
+          </DCArtboard>
+          <DCArtboard id="a-qs" label="Screen · Takes" width={440} height={920}>
+            <ArenaQuestionsScreen />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="colors" title="Arena · Color Variants">
+          <DCArtboard id="c-header" label="Overview" width={1600} height={360}>
+            <VariantHeader />
+          </DCArtboard>
+          <DCArtboard id="c-grid" label="3 Variants" width={1600} height={820}>
+            <VariantGrid />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="names" title="Naming & Wordmarks">
+          <DCArtboard id="n-header" label="Overview" width={1600} height={360}>
+            <NamesHeader />
+          </DCArtboard>
+          <DCArtboard id="n-grid" label="6 Candidates" width={1600} height={880}>
+            <NamesGrid />
+          </DCArtboard>
+          <DCArtboard id="n-icons" label="App icons on a grid" width={1600} height={520}>
+            <IconShowcase />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="onboarding" title="Onboarding">
+          <DCArtboard id="ob-1" label="01 · Vote" width={440} height={920}>
+            <Onboard1 />
+          </DCArtboard>
+          <DCArtboard id="ob-2" label="02 · Rooms" width={440} height={920}>
+            <Onboard2 />
+          </DCArtboard>
+          <DCArtboard id="ob-3" label="03 · Follow" width={440} height={920}>
+            <Onboard3 />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="auth" title="Auth">
+          <DCArtboard id="au-1" label="Sign up" width={440} height={920}>
+            <SignUp />
+          </DCArtboard>
+          <DCArtboard id="au-2" label="Magic link sent" width={440} height={920}>
+            <MagicLinkSent />
+          </DCArtboard>
+          <DCArtboard id="au-3" label="Pick handle" width={440} height={920}>
+            <PickHandle />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="oped" title="Direction B · Op-Ed (prev pass)">
+          <DCArtboard id="b-tokens" label="Tokens" width={1040} height={1400}>
+            <OpedTokens />
+          </DCArtboard>
+          <DCArtboard id="b-components" label="Components" width={1040} height={1500}>
+            <OpedComponents />
+          </DCArtboard>
+          <DCArtboard id="b-rooms" label="Screen · Rooms" width={440} height={920}>
+            <OpedRoomsScreen />
+          </DCArtboard>
+          <DCArtboard id="b-room" label="Screen · In Room" width={440} height={920}>
+            <OpedRoomDetailScreen />
+          </DCArtboard>
+          <DCArtboard id="b-qs" label="Screen · Motions" width={440} height={920}>
+            <OpedQuestionsScreen />
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

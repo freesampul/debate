@@ -21,25 +21,21 @@ type MaxSpeakers = (typeof MAX_SPEAKERS_OPTIONS)[number]
 export default function CreateScreen(): React.ReactElement {
   const { questionId, questionContent } = useLocalSearchParams<{ questionId?: string; questionContent?: string }>()
   const [questionPrompt, setQuestionPrompt] = useState(questionContent ?? '')
-  const [title, setTitle] = useState('')
-  const [topic, setTopic] = useState(questionContent ?? '')
+  const [topic, setTopic] = useState('')
   const [maxSpeakers, setMaxSpeakers] = useState<MaxSpeakers>(2)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const hasSelectedQuestion = Boolean(questionId)
+  const roomQuestion = (hasSelectedQuestion ? (questionContent ?? '') : questionPrompt).trim()
 
   const questionError = !hasSelectedQuestion && questionPrompt.trim().length > 0 && questionPrompt.trim().length < 10
     ? 'Question must be at least 10 characters'
     : null
-  const titleError = title.trim().length > 0 && title.trim().length < 3
-    ? 'Title must be at least 3 characters'
-    : null
   const topicError = topic.trim().length > 0 && topic.trim().length < 10
-    ? 'Topic must be at least 10 characters'
+    ? 'Context must be at least 10 characters or left blank'
     : null
-  const canSubmit = title.trim().length >= 3
-    && topic.trim().length >= 10
-    && (hasSelectedQuestion || questionPrompt.trim().length >= 10)
+  const canSubmit = roomQuestion.length >= 10
+    && (topic.trim().length === 0 || topic.trim().length >= 10)
     && !loading
 
   const handleCreate = async (): Promise<void> => {
@@ -47,14 +43,15 @@ export default function CreateScreen(): React.ReactElement {
     setLoading(true)
     try {
       let linkedQuestionId = questionId
+      const trimmedQuestion = roomQuestion
       if (!linkedQuestionId) {
-        const question = await submitQuestion(questionPrompt.trim())
+        const question = await submitQuestion(trimmedQuestion)
         linkedQuestionId = question.id
       }
 
       const room = await createRoom({
-        title: title.trim(),
-        topic: topic.trim(),
+        title: trimmedQuestion,
+        topic: topic.trim() || trimmedQuestion,
         max_speakers: maxSpeakers,
         question_id: linkedQuestionId,
       })
@@ -74,25 +71,25 @@ export default function CreateScreen(): React.ReactElement {
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.helperText}>
-            Every debate room must link to a question. Pick one from the Questions tab or create a new one here.
+            Every debate room is anchored to a single question. Add optional context only if it helps frame the motion.
           </Text>
 
           {hasSelectedQuestion ? (
             <View style={styles.questionCard}>
-              <Text style={styles.questionCardLabel}>Linked question</Text>
+              <Text style={styles.questionCardLabel}>Room question</Text>
               <Text style={styles.questionCardContent}>{questionContent}</Text>
               <Pressable onPress={() => router.push('/questions')}>
-                <Text style={styles.questionCardAction}>Choose a different question</Text>
+                <Text style={styles.questionCardAction}>Choose another question</Text>
               </Pressable>
             </View>
           ) : (
             <>
-              <Text style={styles.sectionLabel}>Question prompt</Text>
+              <Text style={styles.sectionLabel}>Room question</Text>
               <TextInput
                 style={[styles.input, styles.inputMultiline, questionError ? styles.inputError : null]}
                 value={questionPrompt}
                 onChangeText={setQuestionPrompt}
-                placeholder="What is the underlying question this debate room is about?"
+                placeholder="What question are people actually debating?"
                 placeholderTextColor="#6b7280"
                 multiline
                 numberOfLines={3}
@@ -105,25 +102,12 @@ export default function CreateScreen(): React.ReactElement {
             </>
           )}
 
-          <Text style={styles.sectionLabel}>Room title</Text>
-          <TextInput
-            style={[styles.input, titleError ? styles.inputError : null]}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="e.g. Should AI be regulated?"
-            placeholderTextColor="#6b7280"
-            maxLength={100}
-            editable={!loading}
-          />
-          {titleError && <Text style={styles.fieldError}>{titleError}</Text>}
-          <Text style={styles.charCount}>{title.length}/100</Text>
-
-          <Text style={styles.sectionLabel}>Debate topic / motion</Text>
+          <Text style={styles.sectionLabel}>Optional context / motion</Text>
           <TextInput
             style={[styles.input, styles.inputMultiline, topicError ? styles.inputError : null]}
             value={topic}
             onChangeText={setTopic}
-            placeholder="Describe the motion or question being debated…"
+            placeholder="Add sharper framing only if the question needs context."
             placeholderTextColor="#6b7280"
             multiline
             numberOfLines={4}
@@ -164,7 +148,7 @@ export default function CreateScreen(): React.ReactElement {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.createButtonText}>Create debate room</Text>
+              <Text style={styles.createButtonText}>Create room</Text>
             )}
           </Pressable>
         </ScrollView>

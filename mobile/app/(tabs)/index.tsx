@@ -62,8 +62,8 @@ export default function HomeScreen(): React.ReactElement {
   }, [filter, rooms])
 
   const featuredRoom = useMemo(() => {
-    return rooms.find((room) => room.status === 'live') ?? rooms[0] ?? null
-  }, [rooms])
+    return filteredRooms.find((room) => room.status === 'live') ?? filteredRooms[0] ?? null
+  }, [filteredRooms])
 
   if (loading) {
     return (

@@ -26,6 +26,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Debate needs photo library access so you can choose a profile avatar."
+        }
+      ],
+      [
         "@livekit/react-native-expo-plugin",
         {
           "android": {

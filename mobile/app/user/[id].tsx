@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Pressable,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,12 +10,16 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { VButton, VPill } from '../../components/voltage'
+import { useAuth } from '../../hooks/useAuth'
 import { followUser, getUserProfile, unfollowUser } from '../../lib/api'
 import type { UserProfile } from '@debate-app/shared'
+import { textStyles, theme } from '../../theme/voltage'
 
 export default function UserProfileScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
+  const { session } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [updatingFollow, setUpdatingFollow] = useState(false)
@@ -54,102 +58,172 @@ export default function UserProfileScreen(): React.ReactElement {
     }
   }, [profile])
 
+  const initial = useMemo(() => {
+    const source = profile?.display_name || profile?.username || '?'
+    return source.charAt(0).toUpperCase()
+  }, [profile?.display_name, profile?.username])
+
   if (loading || !profile) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        <ActivityIndicator size="large" color={theme.color.pro} />
       </View>
     )
   }
 
-  const initial = (profile.display_name || profile.username).charAt(0).toUpperCase()
+  const isOwnProfile = session?.user.id === profile.id
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.backLink}>Back</Text>
-        </Pressable>
+        <View style={styles.topBar}>
+          <VButton label="Back" variant="ghost" size="sm" onPress={() => router.back()} />
+        </View>
 
-        <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarLetter}>{initial}</Text>
-          </View>
+        <View style={styles.heroCard}>
+          {profile.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarLetter}>{initial}</Text>
+            </View>
+          )}
           <Text style={styles.name}>{profile.display_name || profile.username}</Text>
           <Text style={styles.handle}>@{profile.username}</Text>
           {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+          <View style={styles.pillRow}>
+            <VPill label={`${profile.follower_count} FOLLOWERS`} />
+            <VPill label={`${profile.following_count} FOLLOWING`} />
+          </View>
+          {!isOwnProfile ? (
+            <VButton
+              label={updatingFollow ? 'Working…' : (profile.is_following ? 'Following' : 'Follow')}
+              variant={profile.is_following ? 'ghost' : 'primary'}
+              onPress={() => { void handleToggleFollow() }}
+              disabled={updatingFollow}
+              style={styles.followButton}
+            />
+          ) : null}
         </View>
 
-        <View style={styles.statsCard}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.follower_count}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.following_count}</Text>
-            <Text style={styles.statLabel}>Following</Text>
-          </View>
-          <View style={styles.stat}>
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
             <Text style={styles.statValue}>{profile.hosted_room_count}</Text>
-            <Text style={styles.statLabel}>Hosted</Text>
+            <Text style={styles.statLabel}>HOSTED</Text>
           </View>
-          <View style={styles.stat}>
+          <View style={styles.statCard}>
             <Text style={styles.statValue}>{profile.speaker_room_count}</Text>
-            <Text style={styles.statLabel}>Speaker</Text>
+            <Text style={styles.statLabel}>SPOKE</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{profile.follower_count}</Text>
+            <Text style={styles.statLabel}>FOLLOWERS</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{profile.following_count}</Text>
+            <Text style={styles.statLabel}>FOLLOWING</Text>
           </View>
         </View>
-
-        <Pressable
-          style={[styles.followButton, profile.is_following && styles.followingButton]}
-          onPress={() => { void handleToggleFollow() }}
-          disabled={updatingFollow}
-        >
-          {updatingFollow
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={styles.followButtonText}>{profile.is_following ? 'Following' : 'Follow'}</Text>}
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#111827' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111827' },
-  container: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, gap: 20 },
-  backLink: { color: '#818cf8', fontSize: 14, fontWeight: '600' },
-  avatarContainer: { alignItems: 'center', gap: 8 },
-  avatar: {
+  safe: {
+    flex: 1,
+    backgroundColor: theme.color.bg,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.bg,
+  },
+  container: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: 80,
+    gap: theme.spacing.xl,
+  },
+  topBar: {
+    flexDirection: 'row',
+  },
+  heroCard: {
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  avatarImage: {
     width: 96,
     height: 96,
-    borderRadius: 48,
-    backgroundColor: '#4f46e5',
+    borderRadius: theme.radius.pill,
+  },
+  avatarFallback: {
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.pro,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarLetter: { color: '#fff', fontSize: 42, fontWeight: '800' },
-  name: { color: '#f9fafb', fontSize: 24, fontWeight: '800' },
-  handle: { color: '#9ca3af', fontSize: 15, fontWeight: '600' },
-  bio: { color: '#d1d5db', fontSize: 15, lineHeight: 22, textAlign: 'center' },
-  statsCard: {
+  avatarLetter: {
+    fontFamily: theme.font.displayBold,
+    fontSize: 38,
+    lineHeight: 40,
+    color: theme.color.proInk,
+  },
+  name: {
+    ...textStyles.displayMD,
+    textAlign: 'center',
+  },
+  handle: {
+    fontFamily: theme.font.monoBold,
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: theme.color.dim,
+  },
+  bio: {
+    ...textStyles.body,
+    textAlign: 'center',
+    color: theme.color.muted,
+  },
+  pillRow: {
     flexDirection: 'row',
-    backgroundColor: '#1f2937',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#374151',
-    paddingVertical: 16,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
   },
-  stat: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { color: '#f9fafb', fontSize: 18, fontWeight: '800' },
-  statLabel: { color: '#9ca3af', fontSize: 12, fontWeight: '600' },
   followButton: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 12,
-    paddingVertical: 15,
-    alignItems: 'center',
+    width: '100%',
   },
-  followingButton: {
-    backgroundColor: '#374151',
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
   },
-  followButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  statCard: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.line,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.xl,
+    gap: theme.spacing.xs,
+  },
+  statValue: {
+    ...textStyles.displayMD,
+  },
+  statLabel: {
+    ...textStyles.label,
+    color: theme.color.dim,
+  },
 })

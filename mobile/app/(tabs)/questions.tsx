@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import type { Question } from '@debate-app/shared'
 import { VButton, VPill } from '../../components/voltage'
@@ -31,7 +31,6 @@ export default function QuestionsScreen(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false)
   const { session } = useAuth()
   const router = useRouter()
-  const insets = useSafeAreaInsets()
 
   const fetchQuestions = useCallback(async (): Promise<void> => {
     try {
@@ -129,7 +128,6 @@ export default function QuestionsScreen(): React.ReactElement {
             {item.content}
           </Text>
           <View style={styles.takeMeta}>
-            <Text style={styles.voteCount}>{item.vote_count} VOTES</Text>
             {liveRooms > 0 ? (
               <VPill
                 label={`${liveRooms} ROOM${liveRooms === 1 ? '' : 'S'} LIVE`}
@@ -144,10 +142,12 @@ export default function QuestionsScreen(): React.ReactElement {
         </Pressable>
         <View style={styles.takeActions}>
           <Pressable style={styles.voteButton} onPress={() => { void handleVote(item.id) }}>
-            <Text style={styles.voteButtonText}>▲</Text>
+            <Text style={styles.voteButtonIcon}>♥</Text>
+            <Text style={styles.voteButtonText}>{item.vote_count}</Text>
           </Pressable>
           <Pressable style={styles.playButton} onPress={() => { void handleStartDebate(item) }}>
-            <Text style={styles.playButtonText}>{item.status === 'in_debate' ? '▶' : '+'}</Text>
+            <Text style={styles.playButtonIcon}>{item.status === 'in_debate' ? '▶' : '+'}</Text>
+            <Text style={styles.playButtonText}>{item.status === 'in_debate' ? 'Join' : 'Start'}</Text>
           </Pressable>
         </View>
       </View>
@@ -199,10 +199,6 @@ export default function QuestionsScreen(): React.ReactElement {
         )}
       />
 
-      <Pressable style={[styles.fab, { bottom: insets.bottom + 88 }]} onPress={() => setModalVisible(true)}>
-        <Text style={styles.fabText}>+</Text>
-      </Pressable>
-
       <Modal
         visible={modalVisible}
         transparent
@@ -214,7 +210,7 @@ export default function QuestionsScreen(): React.ReactElement {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <Pressable style={styles.backdrop} onPress={() => setModalVisible(false)} />
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.spacing.xl }]}>
+          <View style={styles.sheet}>
             <Text style={styles.sheetKicker}>NEW TAKE</Text>
             <Text style={styles.sheetTitle}>Post a take.</Text>
             <Text style={styles.sheetSubtitle}>
@@ -268,7 +264,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: theme.spacing.xl,
-    paddingBottom: 140,
+    paddingBottom: 120,
   },
   headerBlock: {
     paddingTop: theme.spacing.lg,
@@ -335,69 +331,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.spacing.sm,
   },
-  voteCount: {
-    fontFamily: theme.font.monoBold,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1.4,
-    color: theme.color.dim,
-    textTransform: 'uppercase',
-  },
   takeActions: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
   },
   voteButton: {
-    width: 36,
-    height: 36,
+    minWidth: 72,
+    height: 40,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: theme.color.line,
     backgroundColor: theme.color.surfaceAlt,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    gap: theme.spacing.xs,
+  },
+  voteButtonIcon: {
+    fontFamily: theme.font.displayBold,
+    fontSize: 13,
+    lineHeight: 14,
+    color: theme.color.con,
   },
   voteButtonText: {
     color: theme.color.pro,
-    fontSize: 16,
-    lineHeight: 18,
-    fontFamily: theme.font.displayBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    fontFamily: theme.font.monoBold,
+    textTransform: 'uppercase',
   },
   playButton: {
-    width: 44,
-    height: 44,
+    minWidth: 82,
+    height: 40,
     borderRadius: theme.radius.pill,
     backgroundColor: theme.color.pro,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    gap: theme.spacing.xs,
+  },
+  playButtonIcon: {
+    color: theme.color.proInk,
+    fontSize: 12,
+    lineHeight: 14,
+    fontFamily: theme.font.displayBold,
   },
   playButtonText: {
     color: theme.color.proInk,
-    fontSize: 18,
-    lineHeight: 20,
-    fontFamily: theme.font.displayBold,
-  },
-  fab: {
-    position: 'absolute',
-    right: theme.spacing.xl,
-    width: 56,
-    height: 56,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: theme.color.pro,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  fabText: {
-    color: theme.color.bg,
-    fontFamily: theme.font.displayBold,
-    fontSize: 32,
-    lineHeight: 34,
-    marginTop: -2,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    fontFamily: theme.font.monoBold,
+    textTransform: 'uppercase',
   },
   empty: {
     alignItems: 'center',
