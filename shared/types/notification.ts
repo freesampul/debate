@@ -1,6 +1,7 @@
 export type NotificationType =
   | 'speaker_live'
   | 'question_live'
+  | 'question_posted'
   | 'room_invite'
   | 'invite_accepted'
   | 'invite_declined'

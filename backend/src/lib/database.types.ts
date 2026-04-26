@@ -168,7 +168,7 @@ export type Database = {
         Row: {
           id: string
           user_id: string
-          type: 'speaker_live' | 'question_live' | 'room_invite' | 'invite_accepted' | 'invite_declined' | 'reaction_received' | 'follow'
+          type: 'speaker_live' | 'question_live' | 'question_posted' | 'room_invite' | 'invite_accepted' | 'invite_declined' | 'reaction_received' | 'follow'
           data: Record<string, unknown>
           read_at: string | null
           created_at: string
@@ -176,7 +176,7 @@ export type Database = {
         Insert: {
           id?: string
           user_id: string
-          type: 'speaker_live' | 'question_live' | 'room_invite' | 'invite_accepted' | 'invite_declined' | 'reaction_received' | 'follow'
+          type: 'speaker_live' | 'question_live' | 'question_posted' | 'room_invite' | 'invite_accepted' | 'invite_declined' | 'reaction_received' | 'follow'
           data?: Record<string, unknown>
           read_at?: string | null
           created_at?: string

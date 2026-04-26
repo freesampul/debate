@@ -47,6 +47,7 @@ export default function TabsLayout(): React.ReactElement {
         name="inbox"
         options={{
           title: 'Inbox',
+          headerShown: false,
         }}
       />
       <Tabs.Screen

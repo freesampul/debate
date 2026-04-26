@@ -13,13 +13,69 @@ function ensureNativeLiveKitSupport(): void {
   }
 }
 
+function ensureDomExceptionSupport(): void {
+  if (typeof globalThis.DOMException === 'function') return
+
+  class RNCompatibleDOMException extends Error {
+    constructor(message = '', name = 'Error') {
+      super(message)
+      this.name = name
+    }
+  }
+
+  globalThis.DOMException = RNCompatibleDOMException as unknown as typeof DOMException
+}
+
+interface LiveKitNativeModule {
+  AudioSession?: {
+    startAudioSession(): Promise<void>
+    stopAudioSession(): Promise<void>
+  }
+  registerGlobals?: () => void
+  default?: {
+    AudioSession?: {
+      startAudioSession(): Promise<void>
+      stopAudioSession(): Promise<void>
+    }
+    registerGlobals?: () => void
+  }
+}
+
+async function loadLiveKitNative(): Promise<{
+  AudioSession: {
+    startAudioSession(): Promise<void>
+    stopAudioSession(): Promise<void>
+  }
+}> {
+  const livekitNative = await import('@livekit/react-native') as LiveKitNativeModule
+
+  const registerGlobals =
+    livekitNative.registerGlobals ??
+    livekitNative.default?.registerGlobals
+
+  if (typeof registerGlobals === 'function') {
+    registerGlobals()
+  }
+
+  const audioSession =
+    livekitNative.AudioSession ??
+    livekitNative.default?.AudioSession
+
+  if (!audioSession) {
+    throw new Error(
+      'LiveKit native audio session is unavailable. Rebuild the iPhone app after installing native audio dependencies.'
+    )
+  }
+
+  return { AudioSession: audioSession }
+}
+
 export async function connectToRoom(token: string, url: string): Promise<import('livekit-client').Room> {
   ensureNativeLiveKitSupport()
+  ensureDomExceptionSupport()
 
-  const [{ Room }, { AudioSession }] = await Promise.all([
-    import('livekit-client'),
-    import('@livekit/react-native'),
-  ])
+  const { AudioSession } = await loadLiveKitNative()
+  const { Room } = await import('livekit-client')
 
   await AudioSession.startAudioSession()
 
@@ -33,9 +89,7 @@ export async function connectToRoom(token: string, url: string): Promise<import(
 }
 
 export async function disconnectFromRoom(room: import('livekit-client').Room): Promise<void> {
-  const [{ AudioSession }] = await Promise.all([
-    import('@livekit/react-native'),
-  ])
+  const { AudioSession } = await loadLiveKitNative()
   await room.disconnect()
   await AudioSession.stopAudioSession()
 }
